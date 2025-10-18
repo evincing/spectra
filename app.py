@@ -12,7 +12,8 @@ import textwrap
 import aiofiles 
 import threading
 
-from keep_alive import keep_alive
+# IMPORTANT: You must have a keep_alive.py file for this to work
+from keep_alive import keep_alive 
 
 keep_alive() # Start the keep-alive server
 
@@ -275,7 +276,10 @@ class LevelingCog(commands.Cog):
         
         for i, (user_id, data) in enumerate(sorted_users[:10]):
             user_name = USER_CACHE.get(str(user_id), f"User ID: {user_id}")
-            leaderboard_msg += f"{i+1}. **{user_name}** - Level {data['level']} ({data['xp']} XP)\n"
+            # Ensure the level key exists before trying to access it
+            level_display = data.get('level', 0)
+            xp_display = data.get('xp', 0)
+            leaderboard_msg += f"{i+1}. **{user_name}** - Level {level_display} ({xp_display} XP)\n"
 
         await interaction.response.send_message(leaderboard_msg)
     # -------------------------
@@ -474,6 +478,74 @@ class UtilityCog(commands.Cog):
         self.bot = bot
         
     # --- UTILITY COMMANDS ---
+    
+    @app_commands.command(name="status", description="Get the link to the bot's live status page.")
+    async def status_command(self, interaction: discord.Interaction):
+        """Responds with the bot's live status page URL."""
+        status_url = "https://spectra-bot.statuspage.io/"
+        await interaction.response.send_message(
+            f"🛠️ You can check the live status of the bot here: <{status_url}>"
+        )
+        
+    @app_commands.command(name="say", description="Makes the bot repeat a message in the current or specified channel.")
+    @app_commands.checks.has_permissions(manage_messages=True)
+    async def say_command(self, interaction: discord.Interaction, text: str, channel: discord.TextChannel = None):
+        """Makes the bot repeat a message."""
+        target_channel = channel or interaction.channel
+        
+        await interaction.response.send_message("✅ Message sent.", ephemeral=True)
+        await target_channel.send(text)
+
+    @app_commands.command(name="serverinfo", description="Displays detailed information about the current server.")
+    async def serverinfo_command(self, interaction: discord.Interaction):
+        """Displays detailed information about the server (guild)."""
+        guild = interaction.guild
+        embed = discord.Embed(
+            title=f"Server Information for {guild.name}",
+            color=discord.Color.blue()
+        )
+        if guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+            
+        embed.add_field(name="Owner", value=guild.owner.mention, inline=True)
+        embed.add_field(name="Server ID", value=guild.id, inline=True)
+        embed.add_field(name="Members", value=guild.member_count, inline=True)
+        embed.add_field(name="Channels", value=len(guild.channels), inline=True)
+        embed.add_field(name="Roles", value=len(guild.roles), inline=True)
+        embed.add_field(name="Boost Level", value=f"Tier {guild.premium_tier} ({guild.premium_subscription_count} boosts)", inline=True)
+        embed.add_field(name="Creation Date", value=f"<t:{int(guild.created_at.timestamp())}:F>", inline=False)
+
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="userinfo", description="Displays detailed information about a user.")
+    async def userinfo_command(self, interaction: discord.Interaction, member: discord.Member = None):
+        """Displays detailed information about a user."""
+        target = member or interaction.user
+        
+        embed = discord.Embed(
+            title=f"User Information for {target.display_name}",
+            color=target.color if target.color != discord.Color.default() else discord.Color.green()
+        )
+        embed.set_thumbnail(url=target.display_avatar.url)
+        
+        # Format roles, excluding @everyone
+        roles = [role.name for role in target.roles if role.name != "@everyone"]
+        
+        embed.add_field(name="Username", value=target.name, inline=True)
+        embed.add_field(name="Display Name", value=target.display_name, inline=True)
+        embed.add_field(name="User ID", value=target.id, inline=True)
+        embed.add_field(name="Account Created", value=f"<t:{int(target.created_at.timestamp())}:R>", inline=True)
+        
+        # Check if the member is in the current guild
+        if isinstance(target, discord.Member):
+            embed.add_field(name="Joined Server", value=f"<t:{int(target.joined_at.timestamp())}:R>", inline=True)
+            embed.add_field(name=f"Roles ({len(roles)})", value=", ".join(roles) if roles else "None", inline=False)
+        else:
+            embed.add_field(name="Joined Server", value="Not in this server", inline=True)
+        
+        await interaction.response.send_message(embed=embed)
+
+
     @app_commands.command(name="ping", description="Shows the bot's latency.")
     async def ping_command(self, interaction: discord.Interaction):
         """Responds with the bot's current latency (ping)."""
@@ -500,12 +572,13 @@ class UtilityCog(commands.Cog):
             'author': interaction.user,
             'guild': interaction.guild,
             'db': LEVELS_DB, # Access to the Levels database
+            'save': save_data, # Allow saving data from eval
             '__': {} 
         }
 
         try:
             # Wrap the code in an async function to allow for `await` calls
-            exec_code = 'async def func():\n' + textwrap.indent(code, '  ')
+            exec_code = 'async def func():\n' + textwrap.indent(code, '    ')
             # Compile and execute the wrapped function definition
             exec(exec_code, env)
             
@@ -518,7 +591,11 @@ class UtilityCog(commands.Cog):
                 str_obj.write(str(ret))
 
         except Exception as e:
-            await interaction.response.send_message(f"**Execution Error:**\n```\n{e}```", ephemeral=True)
+            # Need to respond to the interaction first, if not already done
+            if not interaction.response.is_done():
+                 await interaction.response.send_message(f"**Execution Error:**\n```\n{e}```", ephemeral=True)
+            else:
+                 await interaction.followup.send(f"**Execution Error:**\n```\n{e}```", ephemeral=True)
             return
 
         # Get the final output string
@@ -527,19 +604,34 @@ class UtilityCog(commands.Cog):
         # Send the response
         if output:
             if len(output) > 1900: # Discord message limit is 2000 characters
-                await interaction.response.send_message(
-                    f"**Output too long. Sending as file.**", 
-                    ephemeral=True
-                )
-                # Send output as a file using a follow-up response
-                await interaction.followup.send(
-                    file=discord.File(io.BytesIO(output.encode('utf-8')), filename="output.txt"), 
-                    ephemeral=True
-                )
+                # Initial response
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(
+                        f"**Output too long. Sending as file.**", 
+                        ephemeral=True
+                    )
+                    # Send output as a file using a follow-up response
+                    await interaction.followup.send(
+                        file=discord.File(io.BytesIO(output.encode('utf-8')), filename="output.txt"), 
+                        ephemeral=True
+                    )
+                else:
+                     await interaction.followup.send(
+                        f"**Output too long. Sending as file.**", 
+                        file=discord.File(io.BytesIO(output.encode('utf-8')), filename="output.txt"),
+                        ephemeral=True
+                    )
             else:
-                await interaction.response.send_message(f"**Evaluation Successful:**\n```python\n{output}```", ephemeral=True)
+                if not interaction.response.is_done():
+                    await interaction.response.send_message(f"**Evaluation Successful:**\n```python\n{output}```", ephemeral=True)
+                else:
+                    await interaction.followup.send(f"**Evaluation Successful:**\n```python\n{output}```", ephemeral=True)
         else:
-            await interaction.response.send_message("✅ Code executed without output.", ephemeral=True)
+            if not interaction.response.is_done():
+                await interaction.response.send_message("✅ Code executed without output.", ephemeral=True)
+            else:
+                await interaction.followup.send("✅ Code executed without output.", ephemeral=True)
+
 
     @eval_command.error
     async def eval_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
@@ -584,9 +676,9 @@ class UtilityCog(commands.Cog):
         app_commands.Choice(name="Invisible", value="invisible"),
     ])
     async def setstatus_command(self, interaction: discord.Interaction, 
-                                activity_type: int, 
-                                status_text: str, 
-                                online_status: str):
+                                 activity_type: int, 
+                                 status_text: str, 
+                                 online_status: str):
         
         # Map values back to Discord enums
         activity_map = {
