@@ -12,6 +12,10 @@ import textwrap
 import aiofiles 
 import threading
 
+from keep_alive import keep_alive
+
+keep_alive() # Start the keep-alive server
+
 # Load environment variables from .env file
 load_dotenv()
 
