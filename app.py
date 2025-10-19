@@ -948,7 +948,7 @@ class LicenseCog(commands.Cog):
 # ------------------------------------------------------------------------------
 
 if __name__ == '__main__':
-    TOKEN = os.getenv('DISCORD_BOT_TOKEN')
+    TOKEN = os.getenv('DISCORD_BOT_TOKEN') or os.getenv('DISCORD_TOKEN')
     if TOKEN is None:
         print("Error: DISCORD_BOT_TOKEN environment variable not set. Please check your .env file.")
     else:
