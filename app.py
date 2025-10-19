@@ -482,7 +482,7 @@ class UtilityCog(commands.Cog):
     @app_commands.command(name="status", description="Get the link to the bot's live status page.")
     async def status_command(self, interaction: discord.Interaction):
         """Responds with the bot's live status page URL."""
-        status_url = "https://spectra-bot.statuspage.io/"
+        status_url = "https://spectrastatus.betteruptime.com/"
         await interaction.response.send_message(
             f"🛠️ You can check the live status of the bot here: <{status_url}>"
         )
