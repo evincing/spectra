@@ -56,30 +56,32 @@ def initialize_firestore():
     
     if not json_creds_string:
         print("FATAL ERROR: FIREBASE_CREDENTIALS environment variable not found. Persistence is DISABLED.")
-        if os.path.exists('.env'):
-            print("DEBUG: .env file exists, but variable not loaded. Is 'load_dotenv()' working correctly?")
-        else:
-            print("DEBUG: .env file not found. Ensure you are using environment settings in your hosting platform.")
-        return # DB remains None
+        return
 
     try:
-        # Check if the string actually contains JSON data
-        if not json_creds_string.strip().startswith('{') or not json_creds_string.strip().endswith('}'):
-             print("FATAL ERROR: FIREBASE_CREDENTIALS content is not a valid JSON string. Check formatting.")
-             return # DB remains None
-
+        # Step 1: Parse Credentials (Check the credentials format first)
         creds_dict = json.loads(json_creds_string)
         cred = credentials.Certificate(creds_dict)
-        
-        # Check if app is already initialized (only needed if initialize is called multiple times)
-        if not firebase_admin._app:
-             firebase_admin.initialize_app(cred)
+
+        # 🔑 CRITICAL FIX for 'module 'firebase_admin' has no attribute '_app'' 🔑
+        # Check if an app has already been initialized.
+        if not firebase_admin.apps: 
+            firebase_admin.initialize_app(cred)
+            print("INFO: Firebase app initialized.")
+        else:
+             print("INFO: Firebase app already initialized.")
         
         DB = firestore.client()
-        print("✅ Successfully initialized Firebase Firestore client.")
-    except Exception as e:
-        print(f"FATAL ERROR: Could not initialize Firebase. Check FIREBASE_CREDENTIALS format. Error: {e}")
+        print("✅ Successfully connected to Firebase Firestore client.")
+    
+    except json.JSONDecodeError:
+        print("FATAL ERROR: FIREBASE_CREDENTIALS content is not a valid JSON string. Check formatting.")
         DB = None
+    except Exception as e:
+        # Catch any other initialization errors, like bad credentials
+        print(f"FATAL ERROR: Could not initialize Firebase. Error: {e}")
+        DB = None
+    
     print("--- Firebase Initialization Check Complete ---")
 
 async def load_licenses_from_firestore():
