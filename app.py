@@ -15,11 +15,12 @@ from datetime import datetime, timedelta, timezone
 import uuid # For generating unique license keys
 import firebase_admin
 from firebase_admin import credentials, firestore
+from keep_alive import keep_alive
 
-DB = None # Global Firestore client variable
-
+# --- FIREBASE PERSISTENCE FUNCTIONS ---
 def initialize_firestore():
     """Initializes the Firebase connection using a secure environment variable."""
+    print("--- Starting Firebase Initialization Check ---") # NEW LINE
     global DB
     
     # Get the JSON string from the environment variable
@@ -27,25 +28,25 @@ def initialize_firestore():
     
     if not json_creds_string:
         print("FATAL ERROR: FIREBASE_CREDENTIALS environment variable not found. Persistence is DISABLED.")
-        return # DB remains None here
-    
+        return
+
     try:
-        # 1. Convert the JSON string back into a Python dictionary/object
-        creds_dict = json.loads(json_creds_string) # Fails if JSON is invalid
+        # Convert the JSON string back into a Python dictionary/object
+        creds_dict = json.loads(json_creds_string)
         
-        # 2. Create credentials object from the dictionary
+        # Create credentials object from the dictionary
         cred = credentials.Certificate(creds_dict)
         
-        # 3. Initialize the Firebase app
+        # Initialize the Firebase app
         if not firebase_admin._app:
              firebase_admin.initialize_app(cred)
         
         DB = firestore.client()
         print("✅ Successfully initialized Firebase Firestore client.")
     except Exception as e:
-        # Fails if the JSON loads fine but Firebase rejects the credentials (e.g., project ID wrong)
         print(f"FATAL ERROR: Could not initialize Firebase. Check FIREBASE_CREDENTIALS format. Error: {e}")
-        DB = None # DB is set back to None here
+        DB = None
+    print("--- Firebase Initialization Check Complete ---") # NEW LINE
 
 # IMPORTANT: You must have a keep_alive.py file for this to work
 from keep_alive import keep_alive 
@@ -953,4 +954,5 @@ if __name__ == '__main__':
     if TOKEN is None:
         print("Error: DISCORD_BOT_TOKEN environment variable not set. Please check your .env file.")
     else:
+        keep_alive()  # Start the web server in a separate thread
         bot.run(TOKEN)
