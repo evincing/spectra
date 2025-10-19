@@ -22,29 +22,30 @@ def initialize_firestore():
     """Initializes the Firebase connection using a secure environment variable."""
     global DB
     
-    # 1. Get the JSON string from the environment variable
+    # Get the JSON string from the environment variable
     json_creds_string = os.environ.get('FIREBASE_CREDENTIALS')
     
     if not json_creds_string:
-        print("FATAL ERROR: FIREBASE_CREDENTIALS environment variable not found.")
-        return
-
+        print("FATAL ERROR: FIREBASE_CREDENTIALS environment variable not found. Persistence is DISABLED.")
+        return # DB remains None here
+    
     try:
-        # 2. Convert the JSON string back into a Python dictionary/object
-        creds_dict = json.loads(json_creds_string)
+        # 1. Convert the JSON string back into a Python dictionary/object
+        creds_dict = json.loads(json_creds_string) # Fails if JSON is invalid
         
-        # 3. Create credentials object from the dictionary
+        # 2. Create credentials object from the dictionary
         cred = credentials.Certificate(creds_dict)
         
-        # 4. Initialize the Firebase app
+        # 3. Initialize the Firebase app
         if not firebase_admin._app:
              firebase_admin.initialize_app(cred)
         
         DB = firestore.client()
         print("✅ Successfully initialized Firebase Firestore client.")
     except Exception as e:
+        # Fails if the JSON loads fine but Firebase rejects the credentials (e.g., project ID wrong)
         print(f"FATAL ERROR: Could not initialize Firebase. Check FIREBASE_CREDENTIALS format. Error: {e}")
-        DB = None
+        DB = None # DB is set back to None here
 
 # IMPORTANT: You must have a keep_alive.py file for this to work
 from keep_alive import keep_alive 
