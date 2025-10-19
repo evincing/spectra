@@ -56,22 +56,22 @@ def initialize_firestore():
     
     if not json_creds_string:
         print("FATAL ERROR: FIREBASE_CREDENTIALS environment variable not found. Persistence is DISABLED.")
-        # NEW DEBUGGING LINE
         if os.path.exists('.env'):
             print("DEBUG: .env file exists, but variable not loaded. Is 'load_dotenv()' working correctly?")
         else:
             print("DEBUG: .env file not found. Ensure you are using environment settings in your hosting platform.")
-        return
+        return # DB remains None
 
     try:
         # Check if the string actually contains JSON data
         if not json_creds_string.strip().startswith('{') or not json_creds_string.strip().endswith('}'):
              print("FATAL ERROR: FIREBASE_CREDENTIALS content is not a valid JSON string. Check formatting.")
-             return
+             return # DB remains None
 
         creds_dict = json.loads(json_creds_string)
         cred = credentials.Certificate(creds_dict)
         
+        # Check if app is already initialized (only needed if initialize is called multiple times)
         if not firebase_admin._app:
              firebase_admin.initialize_app(cred)
         
@@ -320,10 +320,10 @@ bot.setup_hook = setup_hook
 
 @bot.event
 async def on_ready():
-    """Initializes the bot and loads data."""
+    """Loads licenses after connection."""
     print(f'Logged in as {bot.user} (ID: {bot.user.id})')
     
-    initialize_firestore()
+    # We moved initialize_firestore() out, so we only run the async license load here.
     await load_licenses_from_firestore()
     
     print('Bot is ready to accept commands.')
@@ -613,6 +613,10 @@ class LicenseCog(commands.Cog):
 if __name__ == "__main__":
     
     keep_alive()
+
+    # 🚨 CRITICAL CHANGE: Initialize Firestore here to ensure logs are visible 
+    # before the Discord connection logs.
+    initialize_firestore()
 
     bot_token = os.environ.get("DISCORD_TOKEN")
     if not bot_token:
