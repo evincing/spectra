@@ -1,5 +1,5 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands # Required for slash commands
 import os 
 from dotenv import load_dotenv
@@ -11,6 +11,8 @@ import contextlib
 import textwrap 
 import aiofiles 
 import threading
+from datetime import datetime, timedelta, timezone
+import uuid # For generating unique license keys
 
 # IMPORTANT: You must have a keep_alive.py file for this to work
 from keep_alive import keep_alive 
@@ -25,6 +27,7 @@ LEVELS_FILE = 'levels.json'
 GIVEAWAYS_FILE = 'giveaways.json'
 CONFIG_FILE = 'config.json' 
 USER_CACHE_FILE = 'user_cache.json'
+LICENSE_FILE = 'licenses.json' # New file for license keys
 # ---------------------------
 
 # --- Configuration and In-Memory Storage (will be loaded from file) ---
@@ -33,11 +36,14 @@ ACTIVE_GIVEWAYS = {}
 GIVEAWAY_MESSAGES = {} 
 CONFIG_DB = {} 
 USER_CACHE = {} 
+LICENSE_DB = {} # New storage for licenses
 # Note: You should replace this with your actual bot owner ID
 # CRITICAL: If you use /eval or /setstatus, this MUST be your Discord User ID
 BOT_OWNER_ID = 1356850034993397781 
 # Use a lock to ensure thread-safe access to the cache from sync/async code
 USER_CACHE_LOCK = threading.Lock() 
+# Time the bot started, used for the /uptime command
+BOT_START_TIME = time.time() 
 # ----------------------------------------------------------------------
 
 # ==============================================================================
@@ -45,8 +51,8 @@ USER_CACHE_LOCK = threading.Lock()
 # ==============================================================================
 
 def load_data():
-    """Loads all data (LEVELS_DB, ACTIVE_GIVEWAYS, CONFIG_DB, USER_CACHE) from JSON files."""
-    global LEVELS_DB, ACTIVE_GIVEWAYS, CONFIG_DB, USER_CACHE
+    """Loads all data (LEVELS_DB, ACTIVE_GIVEWAYS, CONFIG_DB, USER_CACHE, LICENSE_DB) from JSON files."""
+    global LEVELS_DB, ACTIVE_GIVEWAYS, CONFIG_DB, USER_CACHE, LICENSE_DB
     
     # Load Levels Data
     if os.path.exists(LEVELS_FILE):
@@ -88,6 +94,16 @@ def load_data():
             print(f"Error loading {USER_CACHE_FILE}: {e}")
             USER_CACHE = {}
 
+    # Load License Data
+    if os.path.exists(LICENSE_FILE):
+        try:
+            with open(LICENSE_FILE, 'r') as f:
+                LICENSE_DB = json.load(f) 
+            print(f"Loaded {len(LICENSE_DB)} license keys.")
+        except Exception as e:
+            print(f"Error loading {LICENSE_FILE}: {e}")
+            LICENSE_DB = {}
+
 
 def save_data(data_type: str):
     """Saves the specified data structure to its corresponding JSON file."""
@@ -100,6 +116,9 @@ def save_data(data_type: str):
     elif data_type == 'config':
         data_to_save = CONFIG_DB
         file_name = CONFIG_FILE
+    elif data_type == 'licenses':
+        data_to_save = LICENSE_DB
+        file_name = LICENSE_FILE
     else:
         return
 
@@ -121,6 +140,29 @@ async def save_user_cache():
             await f.write(json.dumps(cache_copy, indent=4)) 
     except Exception as e:
         print(f"Error saving user cache: {e}")
+
+# ==============================================================================
+# Helper Functions
+# ==============================================================================
+
+def format_uptime(seconds):
+    """Converts seconds into a human-readable string (e.g., '1 day, 2 hours, 30 minutes')."""
+    seconds = int(seconds)
+    days, seconds = divmod(seconds, 86400)
+    hours, seconds = divmod(seconds, 3600)
+    minutes, seconds = divmod(seconds, 60)
+    
+    parts = []
+    if days > 0:
+        parts.append(f"{days} day{'s' if days != 1 else ''}")
+    if hours > 0:
+        parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+    if minutes > 0:
+        parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
+    if seconds > 0 or not parts: # Include seconds if less than a minute, or if uptime is very short
+        parts.append(f"{seconds} second{'s' if seconds != 1 else ''}")
+        
+    return ", ".join(parts)
 
 
 # ==============================================================================
@@ -184,6 +226,9 @@ async def setup_hook():
     if not os.path.exists(CONFIG_FILE):
         save_data('config')
         print(f"Created initial empty {CONFIG_FILE}.")
+    if not os.path.exists(LICENSE_FILE): # New file check
+        save_data('licenses')
+        print(f"Created initial empty {LICENSE_FILE}.")
     
     # Check for User Cache File
     if not os.path.exists(USER_CACHE_FILE): 
@@ -195,6 +240,7 @@ async def setup_hook():
         await bot.add_cog(LevelingCog(bot))
         await bot.add_cog(GiveawayCog(bot))
         await bot.add_cog(UtilityCog(bot)) 
+        await bot.add_cog(LicenseCog(bot)) # Add the new cog
         print("Cogs Loaded successfully.")
     except Exception as e:
         print(f"Failed to load a Cog: {e}")
@@ -234,6 +280,7 @@ async def on_app_command_error(interaction: discord.Interaction, error: commands
 # Cogs
 # ==============================================================================
 class LevelingCog(commands.Cog):
+    # ... (LevelingCog content remains the same)
     def __init__(self, bot):
         self.bot = bot
         self.last_xp_time = {} # user_id: timestamp
@@ -321,6 +368,7 @@ class LevelingCog(commands.Cog):
         
 # ------------------------------------------------------------------------------
 class GiveawayCog(commands.Cog):
+    # ... (GiveawayCog content remains the same)
     def __init__(self, bot):
         self.bot = bot
         
@@ -479,10 +527,27 @@ class UtilityCog(commands.Cog):
         
     # --- UTILITY COMMANDS ---
     
+    @app_commands.command(name="uptime", description="Returns an embed on how long the bot has been up for.")
+    async def uptime_command(self, interaction: discord.Interaction):
+        """Displays the bot's current uptime."""
+        current_time = time.time()
+        uptime_seconds = current_time - BOT_START_TIME
+        uptime_formatted = format_uptime(uptime_seconds)
+        
+        embed = discord.Embed(
+            title="Bot Uptime ⏱️",
+            description=f"Spectra has been running for: **{uptime_formatted}**",
+            color=discord.Color.dark_teal()
+        )
+        embed.set_footer(text=f"Last restart: {datetime.fromtimestamp(BOT_START_TIME, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        
+        await interaction.response.send_message(embed=embed)
+
+
     @app_commands.command(name="status", description="Get the link to the bot's live status page.")
     async def status_command(self, interaction: discord.Interaction):
         """Responds with the bot's live status page URL."""
-        status_url = "https://spectrastatus.betteruptime.com/"
+        status_url = "https://spectra-bot.statuspage.io/"
         await interaction.response.send_message(
             f"🛠️ You can check the live status of the bot here: <{status_url}>"
         )
@@ -718,6 +783,132 @@ class UtilityCog(commands.Cog):
     
     # -------------------------
 
+# ------------------------------------------------------------------------------
+class LicenseCog(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        
+    @app_commands.command(name="premium_status", description="Shows if the server has Spectra Premium.")
+    async def premium_status_command(self, interaction: discord.Interaction):
+        """Displays the server's premium status (currently always False)."""
+        # CRITICAL: For now, this is hardcoded to False, as requested.
+        is_premium = False 
+        
+        embed = discord.Embed(
+            title="Spectra Premium Status",
+            color=discord.Color.red() if not is_premium else discord.Color.gold()
+        )
+        
+        if is_premium:
+            embed.description = "✅ This server currently has **Spectra Premium** enabled!"
+        else:
+            embed.description = "❌ This server does **not** have Spectra Premium. Run `/license status` to check a specific key."
+        
+        await interaction.response.send_message(embed=embed)
+
+
+    @app_commands.command(name="license_generate", description="Generates a premium license key (Bot Owner only).")
+    @app_commands.checks.check(lambda i: i.user.id == BOT_OWNER_ID)
+    @app_commands.describe(
+        duration="Duration in days for the license to last. Set to 0 for lifetime.",
+        reason="A brief description for why the license was created (e.g., 'Test key', 'Giveaway winner')."
+    )
+    async def license_generate_command(self, interaction: discord.Interaction, duration: int, reason: str):
+        """Generates a license key with a specified expiration."""
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        
+        key = str(uuid.uuid4()).upper().replace('-', '') # Generates a unique 32-char key
+        
+        if duration <= 0:
+            # Lifetime key
+            expires_at = "LIFETIME"
+            expiry_timestamp = "N/A"
+        else:
+            expiry_date = datetime.now(timezone.utc) + timedelta(days=duration)
+            expires_at = expiry_date.strftime("%Y-%m-%d %H:%M:%S UTC")
+            expiry_timestamp = int(expiry_date.timestamp())
+
+        # Store the license in the database
+        LICENSE_DB[key] = {
+            "created_by": interaction.user.id,
+            "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "expires_at": expires_at,
+            "expiry_timestamp": expiry_timestamp, # Stored as int for easy comparison
+            "reason": reason,
+            "is_used": False, # Will be set to True when a guild claims it
+            "guild_id": None
+        }
+        save_data('licenses')
+        
+        embed = discord.Embed(
+            title="🔑 Premium License Key Generated",
+            description=f"**Key:** `{key}`",
+            color=discord.Color.gold()
+        )
+        embed.add_field(name="Duration", value=f"{duration} day(s)", inline=True)
+        embed.add_field(name="Expires", value=expires_at, inline=True)
+        embed.add_field(name="Reason", value=reason, inline=False)
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+    @app_commands.command(name="license_status", description="Shows if the provided license is valid and if it expires.")
+    @app_commands.describe(license_key="The 32-character license key to check.")
+    async def license_status_command(self, interaction: discord.Interaction, license_key: str):
+        """Checks the status of a provided license key."""
+        await interaction.response.defer(thinking=True)
+        
+        key = license_key.upper().replace('-', '').strip()
+        license_info = LICENSE_DB.get(key)
+        
+        if not license_info:
+            embed = discord.Embed(
+                title="License Status Check ❌",
+                description="The provided license key is **invalid** or does not exist.",
+                color=discord.Color.red()
+            )
+            await interaction.followup.send(embed=embed)
+            return
+
+        is_valid = True
+        expiry_ts = license_info.get("expiry_timestamp")
+        
+        if expiry_ts != "N/A" and int(expiry_ts) < time.time():
+            is_valid = False
+            expiry_display = f"Expired: <t:{expiry_ts}:R>"
+        elif expiry_ts == "N/A":
+            expiry_display = "LIFETIME (Never expires)"
+        else:
+            expiry_display = f"Expires: <t:{expiry_ts}:R>"
+
+        # Determine general status
+        if license_info.get("is_used") and is_valid:
+            status = "✅ Active & Bound to a Guild"
+            color = discord.Color.green()
+        elif license_info.get("is_used") and not is_valid:
+            status = "❌ Expired & Used"
+            color = discord.Color.dark_red()
+        elif not is_valid:
+            status = "❌ Expired"
+            color = discord.Color.dark_red()
+        else:
+            status = "⚠️ Unused & Valid"
+            color = discord.Color.orange()
+            
+        # Build the embed
+        embed = discord.Embed(
+            title="License Status Check ℹ️",
+            color=color
+        )
+        embed.add_field(name="Status", value=status, inline=False)
+        embed.add_field(name="Key", value=f"`{key}`", inline=False)
+        embed.add_field(name="Expiration", value=expiry_display, inline=True)
+        embed.add_field(name="Used", value="Yes" if license_info.get("is_used") else "No", inline=True)
+        embed.add_field(name="Bound Guild ID", value=license_info.get("guild_id") or "N/A", inline=True)
+
+        await interaction.followup.send(embed=embed)
+
+# ------------------------------------------------------------------------------
 
 if __name__ == '__main__':
     TOKEN = os.getenv('DISCORD_BOT_TOKEN')
