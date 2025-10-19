@@ -114,7 +114,8 @@ def save_data(data_type: str):
         data_to_save = ACTIVE_GIVEWAYS
         file_name = GIVEAWAYS_FILE
     elif data_type == 'config':
-        data_to_save = CONFIG_DB
+        # NOTE: Keys in CONFIG_DB are integers (guild IDs), so convert to str for JSON
+        data_to_save = {str(k): v for k, v in CONFIG_DB.items()}
         file_name = CONFIG_FILE
     elif data_type == 'licenses':
         data_to_save = LICENSE_DB
@@ -164,6 +165,30 @@ def format_uptime(seconds):
         
     return ", ".join(parts)
 
+
+def is_guild_premium(guild_id: int):
+    """Checks if a guild has active, non-expired premium status."""
+    guild_config = CONFIG_DB.get(guild_id, {})
+    premium_info = guild_config.get('premium', {})
+    
+    if not premium_info or not premium_info.get('active', False):
+        return False, None
+
+    expires_ts = premium_info.get('expires_at')
+    
+    if expires_ts == "LIFETIME":
+        return True, "LIFETIME"
+    
+    try:
+        expires_ts = int(expires_ts)
+        if expires_ts > time.time():
+            return True, expires_ts
+        else:
+            # Expired, but we'll leave cleanup to the tasks.
+            return False, expires_ts 
+    except (TypeError, ValueError):
+        # Should not happen if data is saved correctly
+        return False, None
 
 # ==============================================================================
 # Cache Management & Bot Setup
@@ -280,7 +305,6 @@ async def on_app_command_error(interaction: discord.Interaction, error: commands
 # Cogs
 # ==============================================================================
 class LevelingCog(commands.Cog):
-    # ... (LevelingCog content remains the same)
     def __init__(self, bot):
         self.bot = bot
         self.last_xp_time = {} # user_id: timestamp
@@ -368,7 +392,6 @@ class LevelingCog(commands.Cog):
         
 # ------------------------------------------------------------------------------
 class GiveawayCog(commands.Cog):
-    # ... (GiveawayCog content remains the same)
     def __init__(self, bot):
         self.bot = bot
         
@@ -787,12 +810,66 @@ class UtilityCog(commands.Cog):
 class LicenseCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        # Start the background task to check for expired licenses
+        self.check_licenses.start()
+        
+    def cog_unload(self):
+        """Cancel the loop when the cog is unloaded."""
+        self.check_licenses.cancel()
+
+    # --- BACKGROUND TASK ---
+    @tasks.loop(minutes=10) # Check every 10 minutes
+    async def check_licenses(self):
+        """Automatically checks for and removes expired premium statuses from CONFIG_DB."""
+        current_time = time.time()
+        expired_guild_ids = []
+        
+        for guild_id, config in CONFIG_DB.items():
+            premium_info = config.get('premium', {})
+            expires_ts = premium_info.get('expires_at')
+            
+            if premium_info.get('active', False) and expires_ts != "LIFETIME":
+                try:
+                    expires_ts = int(expires_ts)
+                    if current_time >= expires_ts:
+                        expired_guild_ids.append(guild_id)
+                except (TypeError, ValueError):
+                    print(f"Error checking premium for guild {guild_id}: Invalid timestamp.")
+                    
+        if expired_guild_ids:
+            print(f"Found {len(expired_guild_ids)} expired premium subscriptions. Removing...")
+            
+            for guild_id in expired_guild_ids:
+                # 1. Update CONFIG_DB
+                if guild_id in CONFIG_DB and 'premium' in CONFIG_DB[guild_id]:
+                    # Keep the record but mark as inactive and note the removal reason
+                    CONFIG_DB[guild_id]['premium']['active'] = False
+                    CONFIG_DB[guild_id]['premium']['inactivated_at'] = int(current_time)
+                    CONFIG_DB[guild_id]['premium']['removal_reason'] = "Expired automatically."
+                    
+                    # 2. Try to inform the guild owner (optional but good practice)
+                    try:
+                        guild = self.bot.get_guild(guild_id)
+                        if guild and guild.owner:
+                            await guild.owner.send(f"⚠️ **Spectra Premium Status Removed**\nThe premium license for your server **{guild.name}** has **automatically expired** as of now. You will need to apply a new valid license key to re-enable premium features.")
+                    except Exception as e:
+                        print(f"Could not notify owner of guild {guild_id}: {e}")
+                        
+            # 3. Save the updated configuration
+            save_data('config')
+            print("Successfully cleaned up expired premium statuses.")
+
+    @check_licenses.before_loop
+    async def before_check_licenses(self):
+        """Wait until the bot is ready before starting the task."""
+        await self.bot.wait_until_ready()
+        
+    # --- LICENSE COMMANDS ---
         
     @app_commands.command(name="premium_status", description="Shows if the server has Spectra Premium.")
     async def premium_status_command(self, interaction: discord.Interaction):
-        """Displays the server's premium status (currently always False)."""
-        # CRITICAL: For now, this is hardcoded to False, as requested.
-        is_premium = False 
+        """Displays the server's premium status."""
+        is_premium, expires_ts = is_guild_premium(interaction.guild_id)
         
         embed = discord.Embed(
             title="Spectra Premium Status",
@@ -800,9 +877,19 @@ class LicenseCog(commands.Cog):
         )
         
         if is_premium:
+            if expires_ts == "LIFETIME":
+                expiry_text = "Never (LIFETIME)"
+            else:
+                expiry_text = f"<t:{expires_ts}:F> (<t:{expires_ts}:R>)"
+                
             embed.description = "✅ This server currently has **Spectra Premium** enabled!"
+            embed.add_field(name="Expires", value=expiry_text, inline=False)
+            embed.add_field(name="Active License", value=CONFIG_DB.get(interaction.guild_id, {}).get('premium', {}).get('license_key', 'N/A'), inline=False)
         else:
-            embed.description = "❌ This server does **not** have Spectra Premium. Run `/license status` to check a specific key."
+            embed.description = "❌ This server does **not** have Spectra Premium."
+            # If it just expired, show that
+            if expires_ts is not None and expires_ts != "LIFETIME" and int(expires_ts) <= time.time():
+                 embed.description += f"\n*(The last premium subscription expired <t:{expires_ts}:R>.)*"
         
         await interaction.response.send_message(embed=embed)
 
@@ -852,6 +939,47 @@ class LicenseCog(commands.Cog):
         await interaction.followup.send(embed=embed, ephemeral=True)
 
 
+    @app_commands.command(name="license_delete", description="Deletes a premium license key from the database (Bot Owner only).")
+    @app_commands.checks.check(lambda i: i.user.id == BOT_OWNER_ID)
+    @app_commands.describe(license_key="The 32-character license key to delete.")
+    async def license_delete_command(self, interaction: discord.Interaction, license_key: str):
+        """Deletes a license key."""
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        
+        key = license_key.upper().replace('-', '').strip()
+        
+        if key in LICENSE_DB:
+            # Check if it's currently used by a guild
+            if LICENSE_DB[key]['is_used']:
+                guild_id = LICENSE_DB[key]['guild_id']
+                
+                # Check if it's the active premium key for that guild
+                guild_config = CONFIG_DB.get(guild_id, {})
+                premium_info = guild_config.get('premium', {})
+                if premium_info.get('active', False) and premium_info.get('license_key') == key:
+                    # Remove premium status from the guild config
+                    CONFIG_DB[guild_id]['premium']['active'] = False
+                    CONFIG_DB[guild_id]['premium']['removal_reason'] = "License deleted by owner."
+                    save_data('config')
+                    
+                    # Try to notify the guild owner
+                    try:
+                        guild = self.bot.get_guild(guild_id)
+                        if guild and guild.owner:
+                            await guild.owner.send(f"⚠️ **Spectra Premium Status Removed**\nYour server's premium key (`{key}`) was manually **deleted by the bot owner**. Premium features for **{guild.name}** have been disabled.")
+                    except Exception:
+                        pass # Ignore notification errors
+
+                await interaction.followup.send(f"⚠️ License key `{key}` deleted. Premium status was removed from Guild ID `{guild_id}` if it was active.", ephemeral=True)
+            else:
+                 await interaction.followup.send(f"✅ License key `{key}` deleted successfully.", ephemeral=True)
+
+            del LICENSE_DB[key]
+            save_data('licenses')
+        else:
+            await interaction.followup.send(f"❌ License key `{key}` not found in the database.", ephemeral=True)
+
+
     @app_commands.command(name="license_status", description="Shows if the provided license is valid and if it expires.")
     @app_commands.describe(license_key="The 32-character license key to check.")
     async def license_status_command(self, interaction: discord.Interaction, license_key: str):
@@ -875,11 +1003,11 @@ class LicenseCog(commands.Cog):
         
         if expiry_ts != "N/A" and int(expiry_ts) < time.time():
             is_valid = False
-            expiry_display = f"Expired: <t:{expiry_ts}:R>"
+            expiry_display = f"Expired: <t:{expiry_ts}:F>"
         elif expiry_ts == "N/A":
             expiry_display = "LIFETIME (Never expires)"
         else:
-            expiry_display = f"Expires: <t:{expiry_ts}:R>"
+            expiry_display = f"Expires: <t:{expiry_ts}:F> (<t:{expiry_ts}:R>)"
 
         # Determine general status
         if license_info.get("is_used") and is_valid:
@@ -907,6 +1035,69 @@ class LicenseCog(commands.Cog):
         embed.add_field(name="Bound Guild ID", value=license_info.get("guild_id") or "N/A", inline=True)
 
         await interaction.followup.send(embed=embed)
+
+
+    @app_commands.command(name="license_guild", description="Applies a license key to this server to activate premium.")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    @app_commands.describe(license_key="The license key to apply to this server.")
+    async def license_guild_command(self, interaction: discord.Interaction, license_key: str):
+        """Applies a valid license key to the current guild."""
+        await interaction.response.defer(thinking=True)
+        guild_id = interaction.guild_id
+        
+        key = license_key.upper().replace('-', '').strip()
+        license_info = LICENSE_DB.get(key)
+        
+        # --- Validation Checks ---
+        if not license_info:
+            return await interaction.followup.send("❌ Invalid key. The provided license key was not found.", ephemeral=True)
+        
+        is_premium, expires_ts = is_guild_premium(guild_id)
+        if is_premium:
+            if expires_ts == "LIFETIME":
+                 return await interaction.followup.send("❌ This server already has an active **LIFETIME** premium subscription. No need to apply a new key.", ephemeral=True)
+            else:
+                 return await interaction.followup.send(f"❌ This server already has an active premium subscription expiring <t:{expires_ts}:R>. Wait for it to expire or contact the bot owner.", ephemeral=True)
+        
+        if license_info.get('expiry_timestamp') != "N/A" and int(license_info.get('expiry_timestamp', 0)) <= time.time():
+            return await interaction.followup.send("❌ This key has **expired** and cannot be used.", ephemeral=True)
+            
+        if license_info.get('is_used') and license_info.get('guild_id') != guild_id:
+            return await interaction.followup.send(f"❌ This key is already in use by another server (Guild ID: `{license_info.get('guild_id')}`).", ephemeral=True)
+        
+        # --- Application ---
+        
+        # 1. Update LICENSE_DB (mark key as used and bind to this guild)
+        license_info['is_used'] = True
+        license_info['guild_id'] = guild_id
+        save_data('licenses')
+        
+        # 2. Update CONFIG_DB (activate premium for this guild)
+        guild_config = CONFIG_DB.get(guild_id, {})
+        guild_config['premium'] = {
+            'active': True,
+            'license_key': key,
+            'activated_by': interaction.user.id,
+            'activated_at': int(time.time()),
+            'expires_at': license_info['expiry_timestamp'] # "N/A" or timestamp
+        }
+        CONFIG_DB[guild_id] = guild_config
+        save_data('config')
+        
+        # 3. Success Message
+        expiry_display = "LIFETIME" if license_info['expires_at'] == "LIFETIME" else f"Expires <t:{license_info['expiry_timestamp']}:R>"
+        
+        embed = discord.Embed(
+            title="✅ Premium Activated Successfully!",
+            description=f"**{interaction.guild.name}** now has Spectra Premium!",
+            color=discord.Color.green()
+        )
+        embed.add_field(name="Key Used", value=f"`{key}`", inline=False)
+        embed.add_field(name="Premium Status", value=expiry_display, inline=True)
+        embed.add_field(name="Activated By", value=interaction.user.mention, inline=True)
+
+        await interaction.followup.send(embed=embed)
+
 
 # ------------------------------------------------------------------------------
 
