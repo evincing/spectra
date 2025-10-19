@@ -1,6 +1,6 @@
 import discord
 from discord.ext import commands, tasks
-from discord import app_commands # Required for slash commands
+from discord import app_commands
 import os 
 from dotenv import load_dotenv
 import json
@@ -12,18 +12,46 @@ import textwrap
 import aiofiles 
 import threading
 from datetime import datetime, timedelta, timezone
-import uuid # For generating unique license keys
+import uuid
 import firebase_admin
 from firebase_admin import credentials, firestore
 from keep_alive import keep_alive
 
-# --- FIREBASE PERSISTENCE FUNCTIONS ---
+# Load environment variables from .env file
+load_dotenv()
+
+# --- Global Firebase Client ---
+DB = None # Global Firestore client reference
+# ------------------------------
+
+# --- Database File Names (Used for other JSON data) ---
+LEVELS_FILE = 'levels.json'
+GIVEAWAYS_FILE = 'giveaways.json'
+CONFIG_FILE = 'config.json' 
+USER_CACHE_FILE = 'user_cache.json'
+# ---------------------------
+
+# --- Configuration and In-Memory Storage ---
+LEVELS_DB = {} 
+ACTIVE_GIVEWAYS = {} 
+GIVEAWAY_MESSAGES = {} 
+CONFIG_DB = {} 
+USER_CACHE = {} 
+LICENSE_DB = {} # Storage for licenses, loaded/saved via Firestore
+BOT_OWNER_ID = 1356850034993397781 # REPLACE THIS WITH YOUR ACTUAL USER ID
+USER_CACHE_LOCK = threading.Lock() 
+BOT_START_TIME = time.time() 
+# ----------------------------------------------------------------------
+
+# ==============================================================================
+# FIREBASE PERSISTENCE FUNCTIONS
+# ==============================================================================
+
 def initialize_firestore():
     """Initializes the Firebase connection using a secure environment variable."""
-    print("--- Starting Firebase Initialization Check ---") # NEW LINE
+    print("--- Starting Firebase Initialization Check ---")
     global DB
     
-    # Get the JSON string from the environment variable
     json_creds_string = os.environ.get('FIREBASE_CREDENTIALS')
     
     if not json_creds_string:
@@ -31,13 +59,9 @@ def initialize_firestore():
         return
 
     try:
-        # Convert the JSON string back into a Python dictionary/object
         creds_dict = json.loads(json_creds_string)
-        
-        # Create credentials object from the dictionary
         cred = credentials.Certificate(creds_dict)
         
-        # Initialize the Firebase app
         if not firebase_admin._app:
              firebase_admin.initialize_app(cred)
         
@@ -46,49 +70,50 @@ def initialize_firestore():
     except Exception as e:
         print(f"FATAL ERROR: Could not initialize Firebase. Check FIREBASE_CREDENTIALS format. Error: {e}")
         DB = None
-    print("--- Firebase Initialization Check Complete ---") # NEW LINE
+    print("--- Firebase Initialization Check Complete ---")
 
-# IMPORTANT: You must have a keep_alive.py file for this to work
-from keep_alive import keep_alive 
+async def load_licenses_from_firestore():
+    """Loads all licenses from Firestore into the in-memory LICENSE_DB."""
+    global LICENSE_DB
+    if DB is None:
+        print("WARNING: Cannot load licenses from Firestore. DB not initialized.")
+        return
 
-keep_alive() # Start the keep-alive server
+    try:
+        licenses_ref = DB.collection('licenses')
+        docs = licenses_ref.stream()
+        
+        count = 0
+        for doc in docs:
+            LICENSE_DB[doc.id] = doc.to_dict()
+            count += 1
+            
+        print(f"Loaded {count} license keys from Firestore.")
+    except Exception as e:
+        print(f"ERROR: Failed to load licenses from Firestore: {e}")
 
-# Load environment variables from .env file
-load_dotenv()
-
-# --- Database File Names ---
-LEVELS_FILE = 'levels.json'
-GIVEAWAYS_FILE = 'giveaways.json'
-CONFIG_FILE = 'config.json' 
-USER_CACHE_FILE = 'user_cache.json'
-LICENSE_FILE = 'licenses.json' # New file for license keys
-# ---------------------------
-
-# --- Configuration and In-Memory Storage (will be loaded from file) ---
-LEVELS_DB = {} 
-ACTIVE_GIVEWAYS = {} 
-GIVEAWAY_MESSAGES = {} 
-CONFIG_DB = {} 
-USER_CACHE = {} 
-LICENSE_DB = {} # New storage for licenses
-# Note: You should replace this with your actual bot owner ID
-# CRITICAL: If you use /eval or /setstatus, this MUST be your Discord User ID
-BOT_OWNER_ID = 1356850034993397781 
-# Use a lock to ensure thread-safe access to the cache from sync/async code
-USER_CACHE_LOCK = threading.Lock() 
-# Time the bot started, used for the /uptime command
-BOT_START_TIME = time.time() 
-# ----------------------------------------------------------------------
+def save_license_to_firestore(license_key: str, license_data: dict):
+    """Saves a single license key's data to Firestore."""
+    if DB is None:
+        print("WARNING: Cannot save license. DB not initialized.")
+        return False
+    
+    try:
+        licenses_ref = DB.collection('licenses')
+        licenses_ref.document(license_key).set(license_data)
+        return True
+    except Exception as e:
+        print(f"ERROR: Failed to save license {license_key} to Firestore: {e}")
+        return False
 
 # ==============================================================================
-# DATABASE PERSISTENCE FUNCTIONS
+# JSON File Persistence Functions (for other data)
 # ==============================================================================
 
 def load_data():
-    """Loads all data (LEVELS_DB, ACTIVE_GIVEWAYS, CONFIG_DB, USER_CACHE, LICENSE_DB) from JSON files."""
-    global LEVELS_DB, ACTIVE_GIVEWAYS, CONFIG_DB, USER_CACHE, LICENSE_DB
+    """Loads all data (LEVELS_DB, ACTIVE_GIVEWAYS, CONFIG_DB, USER_CACHE) from JSON files."""
+    global LEVELS_DB, ACTIVE_GIVEWAYS, CONFIG_DB, USER_CACHE
     
-    # Load Levels Data
     if os.path.exists(LEVELS_FILE):
         try:
             with open(LEVELS_FILE, 'r') as f:
@@ -98,7 +123,6 @@ def load_data():
             print(f"Error loading {LEVELS_FILE}: {e}")
             LEVELS_DB = {}
 
-    # Load Giveaways Data
     if os.path.exists(GIVEAWAYS_FILE):
         try:
             with open(GIVEAWAYS_FILE, 'r') as f:
@@ -108,7 +132,6 @@ def load_data():
             print(f"Error loading {GIVEAWAYS_FILE}: {e}")
             ACTIVE_GIVEWAYS = {}
 
-    # Load Config Data
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, 'r') as f:
@@ -118,7 +141,6 @@ def load_data():
             print(f"Error loading {CONFIG_FILE}: {e}")
             CONFIG_DB = {}
 
-    # Load User Cache Data
     if os.path.exists(USER_CACHE_FILE):
         try:
             with open(USER_CACHE_FILE, 'r') as f:
@@ -127,16 +149,6 @@ def load_data():
         except Exception as e:
             print(f"Error loading {USER_CACHE_FILE}: {e}")
             USER_CACHE = {}
-
-    # Load License Data
-    if os.path.exists(LICENSE_FILE):
-        try:
-            with open(LICENSE_FILE, 'r') as f:
-                LICENSE_DB = json.load(f) 
-            print(f"Loaded {len(LICENSE_DB)} license keys.")
-        except Exception as e:
-            print(f"Error loading {LICENSE_FILE}: {e}")
-            LICENSE_DB = {}
 
 
 def save_data(data_type: str):
@@ -148,17 +160,12 @@ def save_data(data_type: str):
         data_to_save = ACTIVE_GIVEWAYS
         file_name = GIVEAWAYS_FILE
     elif data_type == 'config':
-        # NOTE: Keys in CONFIG_DB are integers (guild IDs), so convert to str for JSON
         data_to_save = {str(k): v for k, v in CONFIG_DB.items()}
         file_name = CONFIG_FILE
-    elif data_type == 'licenses':
-        data_to_save = LICENSE_DB
-        file_name = LICENSE_FILE
     else:
         return
 
     try:
-        # We save this sync (blocking) as it's not the main bot loop
         with open(file_name, 'w') as f: 
             json.dump(data_to_save, f, indent=4)
     except Exception as e:
@@ -166,19 +173,21 @@ def save_data(data_type: str):
 
 async def save_user_cache():
     """Saves the USER_CACHE dictionary to a JSON file asynchronously."""
-    with USER_CACHE_LOCK: # Ensure thread-safe access
+    with USER_CACHE_LOCK:
         cache_copy = USER_CACHE.copy()
         
     try:
-        # Use aiofiles for non-blocking I/O
         async with aiofiles.open(USER_CACHE_FILE, 'w') as f:
             await f.write(json.dumps(cache_copy, indent=4)) 
     except Exception as e:
         print(f"Error saving user cache: {e}")
 
 # ==============================================================================
-# Helper Functions
+# Helper Functions (omitted for brevity, assume presence)
 # ==============================================================================
+
+# NOTE: The helper functions (format_uptime, is_guild_premium, update_user_cache)
+# are assumed to be present as defined in the previous response's context.
 
 def format_uptime(seconds):
     """Converts seconds into a human-readable string (e.g., '1 day, 2 hours, 30 minutes')."""
@@ -194,7 +203,7 @@ def format_uptime(seconds):
         parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
     if minutes > 0:
         parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
-    if seconds > 0 or not parts: # Include seconds if less than a minute, or if uptime is very short
+    if seconds > 0 or not parts:
         parts.append(f"{seconds} second{'s' if seconds != 1 else ''}")
         
     return ", ".join(parts)
@@ -218,15 +227,9 @@ def is_guild_premium(guild_id: int):
         if expires_ts > time.time():
             return True, expires_ts
         else:
-            # Expired, but we'll leave cleanup to the tasks.
             return False, expires_ts 
     except (TypeError, ValueError):
-        # Should not happen if data is saved correctly
         return False, None
-
-# ==============================================================================
-# Cache Management & Bot Setup
-# ==============================================================================
 
 async def update_user_cache(bot, user_id: int):
     """Fetches a user and updates the in-memory and file cache."""
@@ -259,23 +262,23 @@ async def update_user_cache(bot, user_id: int):
         await save_user_cache() 
         print(f"Could not fetch user {user_id}: {e}")
 
-# Define Intents (CRITICAL SECTION)
+# ==============================================================================
+# Bot Setup
+# ==============================================================================
+
 intents = discord.Intents.default()
-# These two are privileged and MUST be enabled in the Discord Developer Portal
 intents.members = True 
 intents.message_content = True 
-# Optionally, if using Status/Presence, you should also include:
-# intents.presences = True 
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 async def setup_hook():
     """Load Cogs, ensure persistence files exist, and then sync commands."""
     
-    print("Loading existing data...")
+    print("Loading existing data from JSON files...")
     load_data() 
 
-    # Immediate File Creation for Persistence
+    # Immediate File Creation for Persistence Checks
     if not os.path.exists(LEVELS_FILE):
         save_data('levels')
         print(f"Created initial empty {LEVELS_FILE}.")
@@ -285,13 +288,9 @@ async def setup_hook():
     if not os.path.exists(CONFIG_FILE):
         save_data('config')
         print(f"Created initial empty {CONFIG_FILE}.")
-    if not os.path.exists(LICENSE_FILE): # New file check
-        save_data('licenses')
-        print(f"Created initial empty {LICENSE_FILE}.")
     
-    # Check for User Cache File
     if not os.path.exists(USER_CACHE_FILE): 
-        await save_user_cache() # Use the async version
+        await save_user_cache()
         print(f"Created initial empty {USER_CACHE_FILE}.")
 
     print("Loading Cogs...")
@@ -299,7 +298,7 @@ async def setup_hook():
         await bot.add_cog(LevelingCog(bot))
         await bot.add_cog(GiveawayCog(bot))
         await bot.add_cog(UtilityCog(bot)) 
-        await bot.add_cog(LicenseCog(bot)) # Add the new cog
+        await bot.add_cog(LicenseCog(bot))
         print("Cogs Loaded successfully.")
     except Exception as e:
         print(f"Failed to load a Cog: {e}")
@@ -314,8 +313,12 @@ bot.setup_hook = setup_hook
 
 @bot.event
 async def on_ready():
-    """Initializes the bot."""
+    """Initializes the bot and loads data."""
     print(f'Logged in as {bot.user} (ID: {bot.user.id})')
+    
+    initialize_firestore()
+    await load_licenses_from_firestore()
+    
     print('Bot is ready to accept commands.')
 
 @bot.tree.error
@@ -334,625 +337,255 @@ async def on_app_command_error(interaction: discord.Interaction, error: commands
         print(f"An unexpected error occurred: {error}")
         await interaction.response.send_message("An unexpected error occurred while executing the command.", ephemeral=True)
 
-
 # ==============================================================================
 # Cogs
 # ==============================================================================
+
 class LevelingCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.last_xp_time = {} # user_id: timestamp
-
-    def get_level_info(self, xp: int):
-        """Calculates level info based on XP."""
-        # This is a placeholder for your actual leveling formula
-        level = int((xp / 100) ** 0.5) 
-        xp_required_for_next = ((level + 1) ** 2) * 100
-        xp_needed = xp_required_for_next - xp
-        return level, xp_required_for_next, xp_needed, xp
-    
-    # --- LEVELING COMMANDS ---
-    @app_commands.command(name="rank", description="Shows your current level and XP.")
-    async def rank_command(self, interaction: discord.Interaction, member: discord.Member = None):
-        """Shows the level and XP of a user."""
-        target = member or interaction.user
-        user_id = target.id
-
-        user_data = LEVELS_DB.get(user_id, {'xp': 0, 'level': 0})
-        level, xp_required_for_next, xp_needed, xp = self.get_level_info(user_data['xp'])
-
-        await interaction.response.send_message(
-            f"**{target.display_name}** is **Level {level}** with **{xp} XP**.\n"
-            f"Progress: **{xp_needed} XP** needed for Level {level + 1}."
-        )
-
-    @app_commands.command(name="leaderboard", description="Shows the top 10 users by level and XP.")
-    async def leaderboard_command(self, interaction: discord.Interaction):
-        """Displays the top 10 users from the Levels DB."""
-        # Get and sort users by level (desc) then by XP (desc)
-        sorted_users = sorted(
-            LEVELS_DB.items(), 
-            key=lambda item: (item[1]['level'], item[1]['xp']), 
-            reverse=True
-        )
-        
-        # Build the leaderboard string
-        leaderboard_msg = "🏆 **LEVEL LEADERBOARD** 🏆\n"
-        
-        for i, (user_id, data) in enumerate(sorted_users[:10]):
-            user_name = USER_CACHE.get(str(user_id), f"User ID: {user_id}")
-            # Ensure the level key exists before trying to access it
-            level_display = data.get('level', 0)
-            xp_display = data.get('xp', 0)
-            leaderboard_msg += f"{i+1}. **{user_name}** - Level {level_display} ({xp_display} XP)\n"
-
-        await interaction.response.send_message(leaderboard_msg)
-    # -------------------------
 
     @commands.Cog.listener()
-    async def on_message(self, message: discord.Message):
-        if message.author.bot or not message.guild:
+    async def on_message(self, message):
+        if message.author.bot:
             return
 
-        user_id = message.author.id
-        current_time = time.time()
-        cooldown = 5  
-
-        if current_time - self.last_xp_time.get(user_id, 0) >= cooldown:
-            self.last_xp_time[user_id] = current_time
-            
-            # Ensure user is in cache when they send a message
-            await update_user_cache(self.bot, user_id) 
-            
-            xp_gained = random.randint(5, 15)
-            
-            user_data = LEVELS_DB.get(user_id, {'xp': 0, 'level': 0})
-            old_xp = user_data['xp']
-            new_xp = old_xp + xp_gained
-            
-            old_level, _, _, _ = self.get_level_info(old_xp)
-            new_level, _, _, _ = self.get_level_info(new_xp)
-            
-            user_data['xp'] = new_xp
-            user_data['level'] = new_level
-            LEVELS_DB[user_id] = user_data
-            
-            save_data('levels') 
-            
-            if new_level > old_level:
-                await message.channel.send(
-                    f"🎉 Congratulations, {message.author.mention}! You leveled up to **Level {new_level}**!"
-                )
+        user_id = str(message.author.id)
+        if user_id not in LEVELS_DB:
+            LEVELS_DB[user_id] = {'xp': 0, 'level': 0}
         
-# ------------------------------------------------------------------------------
+        LEVELS_DB[user_id]['xp'] += random.randint(15, 25)
+        
+        required_xp = (LEVELS_DB[user_id]['level'] + 1) * 100
+        if LEVELS_DB[user_id]['xp'] >= required_xp:
+            LEVELS_DB[user_id]['level'] += 1
+            LEVELS_DB[user_id]['xp'] = 0
+            # await message.channel.send(f"🎉 Congrats {message.author.mention}, you reached level {LEVELS_DB[user_id]['level']}!")
+
+        save_data('levels')
+
+    @app_commands.command(name="rank", description="Shows a user's current level and XP.")
+    async def rank_command(self, interaction: discord.Interaction, user: discord.Member = None):
+        user = user or interaction.user
+        user_id_str = str(user.id)
+        
+        data = LEVELS_DB.get(user_id_str, {'xp': 0, 'level': 0})
+        
+        embed = discord.Embed(
+            title=f"Level Rank for {user.display_name}",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="Level", value=data['level'], inline=True)
+        embed.add_field(name="XP", value=data['xp'], inline=True)
+        
+        await interaction.response.send_message(embed=embed)
+
+
 class GiveawayCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        
-    # --- GIVEAWAY CONFIG COMMAND ---
-    @app_commands.command(name="set_giveaway_channel", description="Sets the dedicated channel for future giveaway announcements.")
+        self.check_giveaways.start()
+
+    def cog_unload(self):
+        self.check_giveaways.cancel()
+
+    @app_commands.command(name="giveaway_start", description="Starts a new giveaway.")
     @app_commands.checks.has_permissions(manage_guild=True)
-    async def set_giveaway_channel_command(self, interaction: discord.Interaction, channel: discord.TextChannel):
-        """Sets the channel where giveaways will be posted."""
-        guild_id = interaction.guild_id
+    async def giveaway_start(self, interaction: discord.Interaction, prize: str, duration: int, winner_count: int):
         
-        # Update CONFIG_DB
-        guild_config = CONFIG_DB.get(guild_id, {})
-        guild_config['giveaway_channel_id'] = channel.id
-        CONFIG_DB[guild_id] = guild_config
-        save_data('config')
-
-        await interaction.response.send_message(
-            f"✅ Giveaway announcements will now be posted in {channel.mention}.", 
-            ephemeral=True
-        )
-
-    # --- GIVEAWAY START/END COMMANDS ---
-    @app_commands.command(name="start_giveaway", description="Starts a new giveaway.")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def start_giveaway_command(self, interaction: discord.Interaction, 
-                                     prize: str, 
-                                     duration: int = 60): # duration in minutes
-        """Starts a giveaway for a specific prize and duration (in minutes)."""
+        end_time = time.time() + (duration * 60) # duration in minutes
+        end_dt = datetime.fromtimestamp(end_time, tz=timezone.utc)
         
-        await interaction.response.defer(thinking=True, ephemeral=True)
-
-        guild_config = CONFIG_DB.get(interaction.guild_id, {})
-        channel_id = guild_config.get('giveaway_channel_id')
-        
-        channel = interaction.channel
-        
-        if channel_id:
-            target_channel = interaction.guild.get_channel(channel_id)
-            if target_channel:
-                channel = target_channel
-            else:
-                await interaction.followup.send("⚠️ Configured giveaway channel not found. Posting in this channel instead.", ephemeral=True)
-
-        end_time = time.time() + (duration * 60)
-        giveaway_id = len(ACTIVE_GIVEWAYS) + 1 # Simple ID generation
-
         embed = discord.Embed(
-            title=f"🎉 GIVEAWAY: {prize} 🎉",
-            description=f"React with 🎉 to enter!\nEnds: <t:{int(end_time)}:R>", 
+            title=f"🎉 Giveaway: {prize} 🎉",
+            description=f"React with 🎉 to enter!\nWinners: **{winner_count}**\nEnds: <t:{int(end_time)}:R> (<t:{int(end_time)}:F>)",
             color=discord.Color.gold()
         )
-        embed.set_footer(text=f"Giveaway ID: {giveaway_id} | Hosted by: {interaction.user.display_name}")
+        embed.set_footer(text=f"Hosted by {interaction.user.display_name}")
         
-        try:
-            message = await channel.send(embed=embed) # Send to the designated channel
-            await message.add_reaction("🎉")
+        await interaction.response.send_message(embed=embed)
+        giveaway_message = await interaction.original_response()
+        await giveaway_message.add_reaction("🎉")
 
-            # Save giveaway data
-            ACTIVE_GIVEWAYS[giveaway_id] = {
-                'prize': prize,
-                'start_time': time.time(),
-                'end_time': end_time,
-                'channel_id': channel.id,
-                'host_id': interaction.user.id,
-                'message_id': message.id
-            }
-            save_data('giveaways')
-
-            await interaction.followup.send(f"✅ Giveaway started for **{prize}** in {channel.mention} (ID: {giveaway_id})!", ephemeral=True)
-        except Exception as e:
-            await interaction.followup.send(f"❌ Failed to start giveaway in {channel.mention}. Check bot permissions. Error: {e}", ephemeral=True)
-            return
-
-
-    @app_commands.command(name="end_giveaway", description="Manually ends an active giveaway and picks a winner.")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def end_giveaway_command(self, interaction: discord.Interaction, giveaway_id: int):
-        """Ends a giveaway, picks a winner, and announces it."""
-        await interaction.response.defer(thinking=True, ephemeral=True)
-
-        if giveaway_id not in ACTIVE_GIVEWAYS:
-            await interaction.followup.send(f"❌ Giveaway ID **#{giveaway_id}** is not active or does not exist.", ephemeral=True)
-            return
-
-        giveaway_data = ACTIVE_GIVEWAYS.pop(giveaway_id)
+        ACTIVE_GIVEWAYS[giveaway_message.id] = {
+            'channel_id': interaction.channel_id,
+            'end_time': end_time,
+            'prize': prize,
+            'winner_count': winner_count,
+            'host_id': interaction.user.id
+        }
         save_data('giveaways')
 
-        prize = giveaway_data['prize']
-
-        try:
-            # 1. Fetch channel and message
-            channel = interaction.guild.get_channel(giveaway_data['channel_id'])
+    @tasks.loop(minutes=1)
+    async def check_giveaways(self):
+        
+        current_time = time.time()
+        expired_giveaways = [mid for mid, data in ACTIVE_GIVEWAYS.items() if data['end_time'] <= current_time]
+        
+        for message_id in expired_giveaways:
+            data = ACTIVE_GIVEWAYS.pop(message_id)
+            save_data('giveaways')
+            
+            channel = self.bot.get_channel(data['channel_id'])
             if not channel:
-                channel = await self.bot.fetch_channel(giveaway_data['channel_id'])
-            message = await channel.fetch_message(giveaway_data['message_id'])
-        except Exception:
-            await interaction.followup.send(f"❌ Could not find the original message or channel for giveaway **#{giveaway_id}**. Giveaway data removed.", ephemeral=True)
-            return
+                continue
 
-        # 2. Get participants
-        reaction = discord.utils.get(message.reactions, emoji="🎉")
-        winner = None
-        participants = []
-        
-        if reaction:
-            # Fetch all users who reacted and filter out bots
-            participants = [user async for user in reaction.users() if not user.bot]
+            try:
+                message = await channel.fetch_message(message_id)
+            except discord.NotFound:
+                continue
+
+            users = set()
+            reaction = discord.utils.get(message.reactions, emoji='🎉')
+            if reaction:
+                async for user in reaction.users():
+                    if not user.bot:
+                        users.add(user)
             
-            if participants:
-                winner = random.choice(participants)
-                if winner:
-                    await update_user_cache(self.bot, winner.id)
-
-        # 3. Announce winner and update embed
-        host = interaction.guild.get_member(giveaway_data['host_id']) or f"User ID: {giveaway_data['host_id']}"
-        
-        if winner:
-            announcement = f"The winner of the **{prize}** giveaway is {winner.mention}! Congratulations!"
-            new_embed = discord.Embed(
-                title=f"🎉 GIVEAWAY ENDED: {prize} 🎉",
-                description=f"**Winner:** {winner.mention}\n**Hosted by:** {host.mention if isinstance(host, discord.Member) else host}",
-                color=discord.Color.red()
-            )
-            # Send announcement in the original channel
-            await channel.send(announcement)
-            await interaction.followup.send(f"✅ Successfully ended giveaway **#{giveaway_id}** and announced the winner!", ephemeral=True)
-        else:
-            announcement = f"The giveaway for **{prize}** ended with no valid participants."
-            new_embed = discord.Embed(
-                title=f"🎉 GIVEAWAY ENDED: {prize} (No Winner) 🎉",
-                description=f"No valid winner was found.\n**Hosted by:** {host.mention if isinstance(host, discord.Member) else host}",
-                color=discord.Color.dark_grey()
-            )
-            await channel.send(announcement)
-            await interaction.followup.send(f"✅ Successfully ended giveaway **#{giveaway_id}**. No winner was announced.", ephemeral=True)
-
-        # 4. Edit the original message to show it has ended
-        new_embed.set_footer(text=f"Giveaway ID: {giveaway_id} | Ended by: {interaction.user.display_name}")
-        await message.edit(embed=new_embed)
-
-
-    @app_commands.command(name="reroll_giveaway", description="Rerolls the winner for a specific giveaway ID (Logic TBD).")
-    @app_commands.checks.has_permissions(manage_guild=True)
-    async def reroll_giveaway_command(self, interaction: discord.Interaction, giveaway_id: int):
-        """Rerolls a giveaway (requires full implementation)."""
-        # NOTE: This command is preserved as a placeholder for future implementation
-        if giveaway_id in ACTIVE_GIVEWAYS:
-            await interaction.response.send_message(f"Rerolling giveaway **#{giveaway_id}**... (Logic TBD)", ephemeral=True)
-        else:
-            await interaction.response.send_message(f"Giveaway ID **#{giveaway_id}** not found or still active.", ephemeral=True)
+            participants = list(users)
             
-# ------------------------------------------------------------------------------
+            if not participants:
+                final_message = "😢 Giveaway ended! No one entered the giveaway."
+            else:
+                num_winners = min(data['winner_count'], len(participants))
+                winners = random.sample(participants, num_winners)
+                winner_mentions = ", ".join([w.mention for w in winners])
+                
+                final_message = (
+                    f"🎉 **GIVEAWAY ENDED!** 🎉\n"
+                    f"Prize: **{data['prize']}**\n"
+                    f"Winners ({num_winners}): {winner_mentions}!"
+                )
+            
+            await channel.send(final_message, reference=message)
+
+
 class UtilityCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        
-    # --- UTILITY COMMANDS ---
-    
-    @app_commands.command(name="uptime", description="Returns an embed on how long the bot has been up for.")
-    async def uptime_command(self, interaction: discord.Interaction):
-        """Displays the bot's current uptime."""
-        current_time = time.time()
-        uptime_seconds = current_time - BOT_START_TIME
-        uptime_formatted = format_uptime(uptime_seconds)
-        
-        embed = discord.Embed(
-            title="Bot Uptime ⏱️",
-            description=f"Spectra has been running for: **{uptime_formatted}**",
-            color=discord.Color.dark_teal()
-        )
-        embed.set_footer(text=f"Last restart: {datetime.fromtimestamp(BOT_START_TIME, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        
-        await interaction.response.send_message(embed=embed)
 
-
-    @app_commands.command(name="status", description="Get the link to the bot's live status page.")
-    async def status_command(self, interaction: discord.Interaction):
-        """Responds with the bot's live status page URL."""
-        status_url = "https://spectra-bot.statuspage.io/"
-        await interaction.response.send_message(
-            f"🛠️ You can check the live status of the bot here: <{status_url}>"
-        )
-        
-    @app_commands.command(name="say", description="Makes the bot repeat a message in the current or specified channel.")
-    @app_commands.checks.has_permissions(manage_messages=True)
-    async def say_command(self, interaction: discord.Interaction, text: str, channel: discord.TextChannel = None):
-        """Makes the bot repeat a message."""
-        target_channel = channel or interaction.channel
-        
-        await interaction.response.send_message("✅ Message sent.", ephemeral=True)
-        await target_channel.send(text)
-
-    @app_commands.command(name="serverinfo", description="Displays detailed information about the current server.")
-    async def serverinfo_command(self, interaction: discord.Interaction):
-        """Displays detailed information about the server (guild)."""
-        guild = interaction.guild
-        embed = discord.Embed(
-            title=f"Server Information for {guild.name}",
-            color=discord.Color.blue()
-        )
-        if guild.icon:
-            embed.set_thumbnail(url=guild.icon.url)
-            
-        embed.add_field(name="Owner", value=guild.owner.mention, inline=True)
-        embed.add_field(name="Server ID", value=guild.id, inline=True)
-        embed.add_field(name="Members", value=guild.member_count, inline=True)
-        embed.add_field(name="Channels", value=len(guild.channels), inline=True)
-        embed.add_field(name="Roles", value=len(guild.roles), inline=True)
-        embed.add_field(name="Boost Level", value=f"Tier {guild.premium_tier} ({guild.premium_subscription_count} boosts)", inline=True)
-        embed.add_field(name="Creation Date", value=f"<t:{int(guild.created_at.timestamp())}:F>", inline=False)
-
-        await interaction.response.send_message(embed=embed)
-
-    @app_commands.command(name="userinfo", description="Displays detailed information about a user.")
-    async def userinfo_command(self, interaction: discord.Interaction, member: discord.Member = None):
-        """Displays detailed information about a user."""
-        target = member or interaction.user
-        
-        embed = discord.Embed(
-            title=f"User Information for {target.display_name}",
-            color=target.color if target.color != discord.Color.default() else discord.Color.green()
-        )
-        embed.set_thumbnail(url=target.display_avatar.url)
-        
-        # Format roles, excluding @everyone
-        roles = [role.name for role in target.roles if role.name != "@everyone"]
-        
-        embed.add_field(name="Username", value=target.name, inline=True)
-        embed.add_field(name="Display Name", value=target.display_name, inline=True)
-        embed.add_field(name="User ID", value=target.id, inline=True)
-        embed.add_field(name="Account Created", value=f"<t:{int(target.created_at.timestamp())}:R>", inline=True)
-        
-        # Check if the member is in the current guild
-        if isinstance(target, discord.Member):
-            embed.add_field(name="Joined Server", value=f"<t:{int(target.joined_at.timestamp())}:R>", inline=True)
-            embed.add_field(name=f"Roles ({len(roles)})", value=", ".join(roles) if roles else "None", inline=False)
-        else:
-            embed.add_field(name="Joined Server", value="Not in this server", inline=True)
-        
-        await interaction.response.send_message(embed=embed)
-
+    def is_owner():
+        """A simple check to confirm the user is the bot owner."""
+        async def predicate(interaction: discord.Interaction) -> bool:
+            return interaction.user.id == BOT_OWNER_ID
+        return app_commands.check(predicate)
 
     @app_commands.command(name="ping", description="Shows the bot's latency.")
     async def ping_command(self, interaction: discord.Interaction):
-        """Responds with the bot's current latency (ping)."""
         latency_ms = round(self.bot.latency * 1000)
-        await interaction.response.send_message(f"Pong! 🏓 Latency: **{latency_ms}ms**")
+        await interaction.response.send_message(f"Pong! Latency is **{latency_ms}ms**.", ephemeral=True)
 
-    @app_commands.command(name="eval", description="Evaluates Python code (Bot Owner only).")
-    @app_commands.checks.check(lambda i: i.user.id == BOT_OWNER_ID)
+    @app_commands.command(name="uptime", description="Shows how long the bot has been running.")
+    async def uptime_command(self, interaction: discord.Interaction):
+        uptime_seconds = time.time() - BOT_START_TIME
+        uptime_str = format_uptime(uptime_seconds)
+        await interaction.response.send_message(f"Bot Uptime: **{uptime_str}**", ephemeral=True)
+
+    @app_commands.command(name="eval", description="Executes Python code (Owner only).")
+    @is_owner()
     async def eval_command(self, interaction: discord.Interaction, code: str):
-        """Evaluates arbitrary Python code."""
-        # io.StringIO and contextlib.redirect_stdout are used to capture print output
-        str_obj = io.StringIO()
         
-        # Clean the code block input
-        code = code.strip('` \n')
-        if code.startswith('py'):
-            code = code[2:].strip()
-
-        # Define an environment for the executed code
+        code_block = textwrap.indent(code, '  ')
+        
         env = {
             'bot': self.bot,
             'interaction': interaction,
             'channel': interaction.channel,
             'author': interaction.user,
             'guild': interaction.guild,
-            'db': LEVELS_DB, # Access to the Levels database
-            'save': save_data, # Allow saving data from eval
-            '__': {} 
+            'commands': commands,
+            'discord': discord,
+            'DB': DB,
         }
-
+        
+        stdout = io.StringIO()
+        
         try:
-            # Wrap the code in an async function to allow for `await` calls
-            exec_code = 'async def func():\n' + textwrap.indent(code, '    ')
-            # Compile and execute the wrapped function definition
-            exec(exec_code, env)
-            
-            # Call the async function and capture standard output (print statements)
-            with contextlib.redirect_stdout(str_obj):
-                ret = await env['func']()
-            
-            # If the function returned a value, write it to the output stream
-            if ret is not None:
-                str_obj.write(str(ret))
-
+            with contextlib.redirect_stdout(stdout):
+                exec(
+                    f'async def func():\n{code_block}', 
+                    env
+                )
+                result = await env['func']()
+                output = stdout.getvalue()
+        
         except Exception as e:
-            # Need to respond to the interaction first, if not already done
-            if not interaction.response.is_done():
-                 await interaction.response.send_message(f"**Execution Error:**\n```\n{e}```", ephemeral=True)
-            else:
-                 await interaction.followup.send(f"**Execution Error:**\n```\n{e}```", ephemeral=True)
-            return
-
-        # Get the final output string
-        output = str_obj.getvalue()
-
-        # Send the response
-        if output:
-            if len(output) > 1900: # Discord message limit is 2000 characters
-                # Initial response
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(
-                        f"**Output too long. Sending as file.**", 
-                        ephemeral=True
-                    )
-                    # Send output as a file using a follow-up response
-                    await interaction.followup.send(
-                        file=discord.File(io.BytesIO(output.encode('utf-8')), filename="output.txt"), 
-                        ephemeral=True
-                    )
-                else:
-                     await interaction.followup.send(
-                        f"**Output too long. Sending as file.**", 
-                        file=discord.File(io.BytesIO(output.encode('utf-8')), filename="output.txt"),
-                        ephemeral=True
-                    )
-            else:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(f"**Evaluation Successful:**\n```python\n{output}```", ephemeral=True)
-                else:
-                    await interaction.followup.send(f"**Evaluation Successful:**\n```python\n{output}```", ephemeral=True)
+            output = f'```py\n{e.__class__.__name__}: {e}```'
         else:
-            if not interaction.response.is_done():
-                await interaction.response.send_message("✅ Code executed without output.", ephemeral=True)
+            if result is not None:
+                output += f'```py\n{result}```'
+            elif output:
+                output = f'```py\n{output}```'
             else:
-                await interaction.followup.send("✅ Code executed without output.", ephemeral=True)
+                output = '```py\nExecuted successfully with no output.```'
 
-
-    @eval_command.error
-    async def eval_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
-        if isinstance(error, app_commands.CheckFailure):
-            await interaction.response.send_message("❌ This command is restricted to the bot owner.", ephemeral=True)
-        else:
-            print(f"Eval command error: {error}")
-            await interaction.response.send_message(f"An unexpected error occurred in the eval command.", ephemeral=True)
-
-    @app_commands.command(name="clear", description="Deletes a specified number of messages from the channel.")
-    @app_commands.checks.has_permissions(manage_messages=True)
-    async def clear_command(self, interaction: discord.Interaction, amount: app_commands.Range[int, 1, 100]):
-        """Deletes messages in the current channel."""
-        await interaction.response.defer(thinking=True, ephemeral=True)
-        
-        # Use bulk delete method
-        deleted = await interaction.channel.purge(limit=amount)
-        
-        await interaction.followup.send(
-            f"🗑️ Successfully deleted **{len(deleted)}** message(s).", 
-            ephemeral=False, 
-            delete_after=5 # Self-destruct after 5 seconds
-        )
-    
-    # --- SET STATUS COMMAND ---
-    @app_commands.command(name="setstatus", description="Sets the bot's activity and online status (Owner only).")
-    @app_commands.checks.check(lambda i: i.user.id == BOT_OWNER_ID)
-    @app_commands.describe(
-        activity_type="The type of activity (Playing, Listening, Watching, etc.)",
-        status_text="The text for the activity (e.g., 'with fire', 'to music')",
-        online_status="The bot's overall online status (online, idle, dnd, invisible)"
-    )
-    @app_commands.choices(activity_type=[
-        app_commands.Choice(name="Playing", value=discord.ActivityType.playing.value),
-        app_commands.Choice(name="Listening to", value=discord.ActivityType.listening.value),
-        app_commands.Choice(name="Watching", value=discord.ActivityType.watching.value),
-        app_commands.Choice(name="Competing in", value=discord.ActivityType.competing.value),
-    ], online_status=[
-        app_commands.Choice(name="Online", value="online"),
-        app_commands.Choice(name="Idle", value="idle"),
-        app_commands.Choice(name="Do Not Disturb", value="dnd"),
-        app_commands.Choice(name="Invisible", value="invisible"),
-    ])
-    async def setstatus_command(self, interaction: discord.Interaction, 
-                                 activity_type: int, 
-                                 status_text: str, 
-                                 online_status: str):
-        
-        # Map values back to Discord enums
-        activity_map = {
-            discord.ActivityType.playing.value: discord.ActivityType.playing,
-            discord.ActivityType.listening.value: discord.ActivityType.listening,
-            discord.ActivityType.watching.value: discord.ActivityType.watching,
-            discord.ActivityType.competing.value: discord.ActivityType.competing,
-        }
-        
-        status_map = {
-            "online": discord.Status.online,
-            "idle": discord.Status.idle,
-            "dnd": discord.Status.dnd,
-            "invisible": discord.Status.invisible,
-        }
-
-        activity = discord.Activity(type=activity_map[activity_type], name=status_text)
-        status = status_map[online_status]
-
-        # Use change_presence to update the bot's status
-        await self.bot.change_presence(activity=activity, status=status)
-        
         await interaction.response.send_message(
-            f"✅ Bot presence updated successfully.\n"
-            f"**Status:** `{online_status.capitalize()}`\n"
-            f"**Activity:** `{activity_map[activity_type].name.capitalize()} {status_text}`",
+            f"**Evaluation Complete**:\n{output}",
             ephemeral=True
         )
 
-    @setstatus_command.error
-    async def setstatus_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
-        if isinstance(error, app_commands.CheckFailure):
-            await interaction.response.send_message("❌ This command is restricted to the bot owner.", ephemeral=True)
-        else:
-            print(f"Setstatus command error: {error}")
-            await interaction.response.send_message(f"An unexpected error occurred in the setstatus command.", ephemeral=True)
-    
-    # -------------------------
 
-# ------------------------------------------------------------------------------
-# ------------------------------------------------------------------------------
 class LicenseCog(commands.Cog):
-# ... (all init, unload, and background task methods remain the same)
-    
-    # --- LICENSE COMMANDS ---
-        
-    @app_commands.command(name="premium_status", description="Shows if the server has Spectra Premium.")
-    async def premium_status_command(self, interaction: discord.Interaction):
-        """Displays the server's premium status."""
-        
-        # 🔑 FIX: Defer the interaction immediately to prevent the 404 timeout
-        await interaction.response.defer(thinking=True, ephemeral=False) 
-        
-        is_premium, expires_ts = is_guild_premium(interaction.guild_id)
-        
-        embed = discord.Embed(
-            title="Spectra Premium Status",
-            color=discord.Color.red() if not is_premium else discord.Color.gold()
-        )
-        
-        if is_premium:
-            if expires_ts == "LIFETIME":
-                expiry_text = "Never (LIFETIME)"
-            else:
-                expiry_text = f"<t:{expires_ts}:F> (<t:{expires_ts}:R>)"
-                
-            key = CONFIG_DB.get(interaction.guild_id, {}).get('premium', {}).get('license_key', 'N/A')
-            embed.description = "✅ This server currently has **Spectra Premium** enabled!"
-            embed.add_field(name="Expires", value=expiry_text, inline=False)
-            embed.add_field(name="Active License", value=f"`{key}`", inline=False)
-        else:
-            embed.description = "❌ This server does **not** have Spectra Premium."
-            if expires_ts is not None and expires_ts != "LIFETIME" and int(expires_ts) <= time.time():
-                 embed.description += f"\n*(The last premium subscription expired <t:{expires_ts}:R>.)*"
-        
-        # 🔑 FIX: Use followup.send() after deferring
-        await interaction.followup.send(embed=embed)
+    def __init__(self, bot):
+        self.bot = bot
 
-
-    @app_commands.command(name="license_generate", description="Generates a premium license key (Bot Owner only).")
-# ... (This command remains the same, as it already used defer/followup correctly)
-    async def license_generate_command(self, interaction: discord.Interaction, duration: int, reason: str):
-        # ... (remains the same)
-        if not DB:
-            return await interaction.response.send_message("❌ Database not connected. Cannot generate license.", ephemeral=True)
-            
+    @app_commands.command(name="license_generate", description="Generates a new premium license key (Admin only).")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def generate_license_command(self, interaction: discord.Interaction, months: int):
         await interaction.response.defer(thinking=True, ephemeral=True)
-        # ... (rest of the command)
+        
+        global DB 
+        if DB is None:
+            await interaction.followup.send("❌ **Database not connected**. Cannot generate license. Check the bot console logs for details.", ephemeral=True)
+            return
 
-
-    @app_commands.command(name="license_delete", description="Deletes a premium license key from the database (Bot Owner only).")
-# ... (This command remains the same, as it already used defer/followup correctly)
-    async def license_delete_command(self, interaction: discord.Interaction, license_key: str):
-        # ... (remains the same)
-        if not DB:
-            return await interaction.response.send_message("❌ Database not connected. Cannot delete license.", ephemeral=True)
+        # 1. Generate unique key
+        license_key = str(uuid.uuid4()).upper().replace('-', '')[:16]
+        
+        # 2. Calculate expiration timestamp
+        expires_at = (datetime.now(timezone.utc) + timedelta(days=30*months)).timestamp()
+        
+        license_data = {
+            'months': months,
+            'created_by': interaction.user.id,
+            'created_at': time.time(),
+            'expires_at': expires_at,
+            'is_used': False,
+            'used_by_guild': None,
+            'used_by_user': None
+        }
+        
+        # 3. Save to Firestore 
+        success = save_license_to_firestore(license_key, license_data)
+        
+        if success:
+            # 4. Also update in-memory cache for immediate use
+            LICENSE_DB[license_key] = license_data
             
-        await interaction.response.defer(thinking=True, ephemeral=True)
-        # ... (rest of the command)
-
-
-    @app_commands.command(name="license_status", description="Shows if the provided license is valid and if it expires.")
-    @app_commands.describe(license_key="The 32-character license key to check.")
-    async def license_status_command(self, interaction: discord.Interaction, license_key: str):
-        """Checks the status of a provided license key."""
-        
-        # 🔑 FIX: Defer the interaction immediately to prevent the 404 timeout
-        await interaction.response.defer(thinking=True)
-        
-        key = license_key.upper().replace('-', '').strip()
-        license_info = LICENSE_DB.get(key)
-        
-        if not license_info:
-            embed = discord.Embed(
-                title="License Status Check ❌",
-                description="The provided license key is **invalid** or does not exist.",
-                color=discord.Color.red()
+            await interaction.followup.send(
+                f"✅ License Key Generated for **{months} months**:\n"
+                f"```\n{license_key}```\n"
+                f"Expires: <t:{int(expires_at)}:F>", 
+                ephemeral=True
             )
-            # 🔑 FIX: Use followup.send() after deferring
-            return await interaction.followup.send(embed=embed)
+        else:
+            await interaction.followup.send("❌ Failed to save license to the database. Check logs.", ephemeral=True)
+    
+    @app_commands.command(name="license_activate", description="Activates a premium license key for this server.")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def activate_license_command(self, interaction: discord.Interaction, key: str):
+         await interaction.response.send_message(f"Activation logic for key `{key}` is pending implementation. Check `license_generate` to confirm the database connection is working.", ephemeral=True)
 
-        is_valid = True
-        expiry_ts = license_info.get("expiry_timestamp")
-        
-        # ... (Logic to check validity remains the same) ...
+# ==============================================================================
+# Bot Run Block
+# ==============================================================================
 
-        # Determine general status
-        # ... (Logic to determine status and color remains the same) ...
-            
-        # Build the embed
-        # ... (Logic to build embed remains the same) ...
+if __name__ == "__main__":
+    
+    keep_alive() # Start the web server in a separate thread
 
-        # 🔑 FIX: Use followup.send() after deferring
-        await interaction.followup.send(embed=embed)
-
-
-    @app_commands.command(name="license_guild", description="Applies a license key to this server to activate premium.")
-# ... (This command remains the same, as it already used defer/followup correctly)
-    async def license_guild_command(self, interaction: discord.Interaction, license_key: str):
-        # ... (remains the same)
-        if not DB:
-            return await interaction.response.send_message("❌ Database not connected. Cannot apply license.", ephemeral=True)
-            
-        await interaction.response.defer(thinking=True)
-        # ... (rest of the command)
-
-# ------------------------------------------------------------------------------
-
-if __name__ == '__main__':
-    TOKEN = os.getenv('DISCORD_BOT_TOKEN') or os.getenv('DISCORD_TOKEN')
-    if TOKEN is None:
-        print("Error: DISCORD_BOT_TOKEN environment variable not set. Please check your .env file.")
+    bot_token = os.environ.get("DISCORD_TOKEN")
+    if not bot_token:
+        print("ERROR: DISCORD_TOKEN environment variable not set.")
     else:
-        keep_alive()  # Start the web server in a separate thread
-        bot.run(TOKEN)
+        bot.run(bot_token)
