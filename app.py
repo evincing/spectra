@@ -14,7 +14,7 @@ import threading
 from datetime import datetime, timedelta, timezone
 import uuid
 import firebase_admin
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, firestore, exceptions
 from keep_alive import keep_alive
 
 # Load environment variables from .env file
@@ -63,14 +63,17 @@ def initialize_firestore():
         creds_dict = json.loads(json_creds_string)
         cred = credentials.Certificate(creds_dict)
 
-        # 🔑 CRITICAL FIX for 'module 'firebase_admin' has no attribute '_app'' 🔑
-        # Check if an app has already been initialized.
-        if not firebase_admin.apps: 
+        # 🔑 CRITICAL FIX: Use the resilient try/except method to check for initialization.
+        try:
+            # Check if an app is already initialized. If not, this raises a ValueError.
+            firebase_admin.get_app() 
+            print("INFO: Firebase app already initialized.")
+        except ValueError:
+            # If it's not initialized, initialize it now.
             firebase_admin.initialize_app(cred)
-            print("INFO: Firebase app initialized.")
-        else:
-             print("INFO: Firebase app already initialized.")
+            print("INFO: Firebase app initialized for the first time.")
         
+        # Step 3: Connect to Firestore
         DB = firestore.client()
         print("✅ Successfully connected to Firebase Firestore client.")
     
@@ -78,12 +81,12 @@ def initialize_firestore():
         print("FATAL ERROR: FIREBASE_CREDENTIALS content is not a valid JSON string. Check formatting.")
         DB = None
     except Exception as e:
-        # Catch any other initialization errors, like bad credentials
+        # Catch any other critical initialization errors
         print(f"FATAL ERROR: Could not initialize Firebase. Error: {e}")
         DB = None
     
     print("--- Firebase Initialization Check Complete ---")
-
+    
 async def load_licenses_from_firestore():
     """Loads all licenses from Firestore into the in-memory LICENSE_DB."""
     global LICENSE_DB
