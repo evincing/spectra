@@ -21,7 +21,7 @@ from keep_alive import keep_alive
 load_dotenv()
 
 # --- Global Firebase Client ---
-DB = None # Global Firestore client reference
+DB = None 
 # ------------------------------
 
 # --- Database File Names (Used for other JSON data) ---
@@ -37,7 +37,7 @@ ACTIVE_GIVEWAYS = {}
 GIVEAWAY_MESSAGES = {} 
 CONFIG_DB = {} 
 USER_CACHE = {} 
-LICENSE_DB = {} # Storage for licenses, loaded/saved via Firestore
+LICENSE_DB = {} 
 BOT_OWNER_ID = 1356850034993397781 # REPLACE THIS WITH YOUR ACTUAL USER ID
 USER_CACHE_LOCK = threading.Lock() 
 BOT_START_TIME = time.time() 
@@ -56,9 +56,19 @@ def initialize_firestore():
     
     if not json_creds_string:
         print("FATAL ERROR: FIREBASE_CREDENTIALS environment variable not found. Persistence is DISABLED.")
+        # NEW DEBUGGING LINE
+        if os.path.exists('.env'):
+            print("DEBUG: .env file exists, but variable not loaded. Is 'load_dotenv()' working correctly?")
+        else:
+            print("DEBUG: .env file not found. Ensure you are using environment settings in your hosting platform.")
         return
 
     try:
+        # Check if the string actually contains JSON data
+        if not json_creds_string.strip().startswith('{') or not json_creds_string.strip().endswith('}'):
+             print("FATAL ERROR: FIREBASE_CREDENTIALS content is not a valid JSON string. Check formatting.")
+             return
+
         creds_dict = json.loads(json_creds_string)
         cred = credentials.Certificate(creds_dict)
         
@@ -107,7 +117,7 @@ def save_license_to_firestore(license_key: str, license_data: dict):
         return False
 
 # ==============================================================================
-# JSON File Persistence Functions (for other data)
+# JSON File Persistence Functions 
 # ==============================================================================
 
 def load_data():
@@ -183,11 +193,8 @@ async def save_user_cache():
         print(f"Error saving user cache: {e}")
 
 # ==============================================================================
-# Helper Functions (omitted for brevity, assume presence)
+# Helper Functions
 # ==============================================================================
-
-# NOTE: The helper functions (format_uptime, is_guild_premium, update_user_cache)
-# are assumed to be present as defined in the previous response's context.
 
 def format_uptime(seconds):
     """Converts seconds into a human-readable string (e.g., '1 day, 2 hours, 30 minutes')."""
@@ -324,18 +331,37 @@ async def on_ready():
 @bot.tree.error
 async def on_app_command_error(interaction: discord.Interaction, error: commands.CommandError):
     if isinstance(error, commands.MissingPermissions):
-        await interaction.response.send_message(
-            f"You do not have the required permission to use this command: `{error.missing_permissions[0]}`", 
-            ephemeral=True
-        )
+        # We need to check if the interaction has been responded to or deferred
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
+                f"You do not have the required permission to use this command: `{error.missing_permissions[0]}`", 
+                ephemeral=True
+            )
+        else:
+             # If deferred, use followup
+             await interaction.followup.send(f"You do not have the required permission to use this command: `{error.missing_permissions[0]}`", ephemeral=True)
+             
     elif isinstance(error, commands.MissingRequiredArgument):
-        await interaction.response.send_message(
-            f"Missing argument. Usage: `/{interaction.command.name} {interaction.command.usage}`", 
-            ephemeral=True
-        )
+        if not interaction.response.is_done():
+            await interaction.response.send_message(
+                f"Missing argument. Usage: `/{interaction.command.name} {interaction.command.usage}`", 
+                ephemeral=True
+            )
+        else:
+            await interaction.followup.send(f"Missing argument. Usage: `/{interaction.command.name} {interaction.command.usage}`", ephemeral=True)
+            
+    # CRITICAL FIX for the Unknown Interaction error in the error handler itself
+    elif isinstance(error, app_commands.errors.CommandInvokeError) and isinstance(error.original, discord.errors.NotFound):
+        print(f"Error handler avoided 'Unknown interaction' failure. Original command error was: {error.original}")
+        # We can't safely respond here because the token is dead. Do nothing.
+        
     else:
         print(f"An unexpected error occurred: {error}")
-        await interaction.response.send_message("An unexpected error occurred while executing the command.", ephemeral=True)
+        # Only attempt to send the message if the interaction hasn't been responded to or deferred
+        if not interaction.response.is_done():
+            await interaction.response.send_message("An unexpected error occurred while executing the command.", ephemeral=True)
+        # If it was deferred, the error is likely happening in the followup, so we can't do anything safely.
+
 
 # ==============================================================================
 # Cogs
@@ -360,7 +386,6 @@ class LevelingCog(commands.Cog):
         if LEVELS_DB[user_id]['xp'] >= required_xp:
             LEVELS_DB[user_id]['level'] += 1
             LEVELS_DB[user_id]['xp'] = 0
-            # await message.channel.send(f"🎉 Congrats {message.author.mention}, you reached level {LEVELS_DB[user_id]['level']}!")
 
         save_data('levels')
 
@@ -393,8 +418,9 @@ class GiveawayCog(commands.Cog):
     @app_commands.checks.has_permissions(manage_guild=True)
     async def giveaway_start(self, interaction: discord.Interaction, prize: str, duration: int, winner_count: int):
         
+        await interaction.response.defer(thinking=True, ephemeral=False)
+        
         end_time = time.time() + (duration * 60) # duration in minutes
-        end_dt = datetime.fromtimestamp(end_time, tz=timezone.utc)
         
         embed = discord.Embed(
             title=f"🎉 Giveaway: {prize} 🎉",
@@ -403,7 +429,7 @@ class GiveawayCog(commands.Cog):
         )
         embed.set_footer(text=f"Hosted by {interaction.user.display_name}")
         
-        await interaction.response.send_message(embed=embed)
+        await interaction.followup.send(embed=embed)
         giveaway_message = await interaction.original_response()
         await giveaway_message.add_reaction("🎉")
 
@@ -485,6 +511,8 @@ class UtilityCog(commands.Cog):
     @is_owner()
     async def eval_command(self, interaction: discord.Interaction, code: str):
         
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        
         code_block = textwrap.indent(code, '  ')
         
         env = {
@@ -519,7 +547,7 @@ class UtilityCog(commands.Cog):
             else:
                 output = '```py\nExecuted successfully with no output.```'
 
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"**Evaluation Complete**:\n{output}",
             ephemeral=True
         )
@@ -534,13 +562,10 @@ class LicenseCog(commands.Cog):
     async def generate_license_command(self, interaction: discord.Interaction, months: int):
         
         # 🔑 CRITICAL FIX: DEFERRAL MUST BE THE FIRST AWAITED CALL.
-        # This immediately acknowledges the command within the 3-second window.
         await interaction.response.defer(thinking=True, ephemeral=True) 
         
-        # Now we can safely run potentially slow database checks/operations:
         global DB 
         if DB is None:
-            # Use followup.send after deferral
             await interaction.followup.send("❌ **Database not connected**. Cannot generate license. Check the bot console logs for details.", ephemeral=True)
             return
 
@@ -567,7 +592,6 @@ class LicenseCog(commands.Cog):
             # 4. Also update in-memory cache for immediate use
             LICENSE_DB[license_key] = license_data
             
-            # Use followup.send after deferral
             await interaction.followup.send(
                 f"✅ License Key Generated for **{months} months**:\n"
                 f"```\n{license_key}```\n"
@@ -575,21 +599,20 @@ class LicenseCog(commands.Cog):
                 ephemeral=True
             )
         else:
-            # Use followup.send after deferral
             await interaction.followup.send("❌ Failed to save license to the database. Check logs.", ephemeral=True)
     
     @app_commands.command(name="license_activate", description="Activates a premium license key for this server.")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def activate_license_command(self, interaction: discord.Interaction, key: str):
-         # If you implement this, it should also start with a deferral!
          await interaction.response.send_message(f"Activation logic for key `{key}` is pending implementation. Check `license_generate` to confirm the database connection is working.", ephemeral=True)
+
 # ==============================================================================
 # Bot Run Block
 # ==============================================================================
 
 if __name__ == "__main__":
     
-    keep_alive() # Start the web server in a separate thread
+    keep_alive()
 
     bot_token = os.environ.get("DISCORD_TOKEN")
     if not bot_token:
