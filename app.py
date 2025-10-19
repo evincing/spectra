@@ -532,10 +532,15 @@ class LicenseCog(commands.Cog):
     @app_commands.command(name="license_generate", description="Generates a new premium license key (Admin only).")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def generate_license_command(self, interaction: discord.Interaction, months: int):
-        await interaction.response.defer(thinking=True, ephemeral=True)
         
+        # 🔑 CRITICAL FIX: DEFERRAL MUST BE THE FIRST AWAITED CALL.
+        # This immediately acknowledges the command within the 3-second window.
+        await interaction.response.defer(thinking=True, ephemeral=True) 
+        
+        # Now we can safely run potentially slow database checks/operations:
         global DB 
         if DB is None:
+            # Use followup.send after deferral
             await interaction.followup.send("❌ **Database not connected**. Cannot generate license. Check the bot console logs for details.", ephemeral=True)
             return
 
@@ -562,6 +567,7 @@ class LicenseCog(commands.Cog):
             # 4. Also update in-memory cache for immediate use
             LICENSE_DB[license_key] = license_data
             
+            # Use followup.send after deferral
             await interaction.followup.send(
                 f"✅ License Key Generated for **{months} months**:\n"
                 f"```\n{license_key}```\n"
@@ -569,13 +575,14 @@ class LicenseCog(commands.Cog):
                 ephemeral=True
             )
         else:
+            # Use followup.send after deferral
             await interaction.followup.send("❌ Failed to save license to the database. Check logs.", ephemeral=True)
     
     @app_commands.command(name="license_activate", description="Activates a premium license key for this server.")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def activate_license_command(self, interaction: discord.Interaction, key: str):
+         # If you implement this, it should also start with a deferral!
          await interaction.response.send_message(f"Activation logic for key `{key}` is pending implementation. Check `license_generate` to confirm the database connection is working.", ephemeral=True)
-
 # ==============================================================================
 # Bot Run Block
 # ==============================================================================
