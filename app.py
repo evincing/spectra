@@ -138,7 +138,10 @@ class SpectraBot(commands.Bot):
         # Set required intents
         intents = discord.Intents.default()
         intents.guilds = True
-        intents.members = True # Needed for guild owner checks if necessary
+        intents.members = True 
+        
+        # 🔑 CRITICAL: Explicitly enable the Message Content Intent
+        intents.message_content = True 
         
         super().__init__(command_prefix="!", intents=intents)
 
