@@ -136,6 +136,25 @@ def get_license_from_firestore(license_key: str):
     except Exception as e:
         print(f"ERROR: Failed to retrieve license {license_key} from Firestore: {e}")
         return None
+    
+def delete_license_from_firestore(license_key: str):
+    """Deletes a license key document from Firestore."""
+    if DB is None:
+        print("WARNING: Cannot delete license. DB not initialized.")
+        return False
+    
+    try:
+        # 1. Delete from Firestore
+        DB.collection('licenses').document(license_key).delete()
+        
+        # 2. Also remove from the in-memory cache
+        if license_key in LICENSE_DB:
+            del LICENSE_DB[license_key]
+            
+        return True
+    except Exception as e:
+        print(f"ERROR: Failed to delete license {license_key} from Firestore: {e}")
+        return False
 
 # ==============================================================================
 # JSON File Persistence Functions 
@@ -583,7 +602,7 @@ class LicenseCog(commands.Cog):
     @app_commands.command(name="license_generate", description="Generates a new premium license key (Admin only).")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def generate_license_command(self, interaction: discord.Interaction, months: int):
-        # (This is the working command from our last exchange)
+        
         await interaction.response.defer(thinking=True, ephemeral=True) 
         
         global DB 
@@ -591,7 +610,10 @@ class LicenseCog(commands.Cog):
             await interaction.followup.send("❌ **Database not connected**. Cannot generate license.", ephemeral=True)
             return
 
+        # 1. Generate unique key
         license_key = str(uuid.uuid4()).upper().replace('-', '')[:16]
+        
+        # 2. Calculate expiration timestamp
         expires_at = (datetime.now(timezone.utc) + timedelta(days=30*months)).timestamp()
         
         license_data = {
@@ -604,10 +626,13 @@ class LicenseCog(commands.Cog):
             'used_by_user': None
         }
         
+        # 3. Save to Firestore 
         success = save_license_to_firestore(license_key, license_data)
         
         if success:
+            # 4. Also update in-memory cache
             LICENSE_DB[license_key] = license_data
+            
             await interaction.followup.send(
                 f"✅ License Key Generated for **{months} months**:\n"
                 f"```\n{license_key}```\n"
@@ -639,7 +664,6 @@ class LicenseCog(commands.Cog):
 
         # 3. Validation Checks
         if license_data.get('is_used'):
-            # Check if it was used by THIS guild
             if license_data.get('used_by_guild') == interaction.guild_id:
                 await interaction.followup.send(f"⚠️ This key is already **active on this server**.", ephemeral=True)
             else:
@@ -655,7 +679,6 @@ class LicenseCog(commands.Cog):
         guild_id = interaction.guild_id
         user_id = interaction.user.id
         
-        # Update the license data for saving
         license_data['is_used'] = True
         license_data['used_by_guild'] = guild_id
         license_data['used_by_user'] = user_id
@@ -667,24 +690,18 @@ class LicenseCog(commands.Cog):
             return
             
         # 5. Update Local Guild Config (CONFIG_DB)
-        
-        # Determine the new expiration time (in case of stacking licenses)
         is_premium, current_expires_ts = is_guild_premium(guild_id)
         
         if is_premium and current_expires_ts != "LIFETIME":
-            # If current license is still active, extend from its current expiration
             start_time = current_expires_ts
             time_str = f"The existing premium status has been **extended**."
         else:
-            # If not active or expired, start the new license now
             start_time = time.time()
             time_str = f"Premium is now **activated**."
             
-        # Calculate the new total expiration timestamp
         months = license_data['months']
-        new_expires_at = start_time + (30 * 86400 * months) # 30 days * 24h * 3600s * months
+        new_expires_at = start_time + (30 * 86400 * months)
         
-        # Update the CONFIG_DB
         guild_config = CONFIG_DB.get(guild_id, {})
         guild_config['premium'] = {
             'active': True,
@@ -694,15 +711,115 @@ class LicenseCog(commands.Cog):
         }
         CONFIG_DB[guild_id] = guild_config
         
-        # Save the local config file
-        save_data('config') # Make sure this calls your JSON saving logic for CONFIG_FILE
+        save_data('config')
         
         # 6. Success Message
         await interaction.followup.send(
             f"🎉 **Premium Activated!** 🎉\n"
             f"**{time_str}** You have successfully redeemed a **{months}-month** license.\n"
             f"New Expiration: <t:{int(new_expires_at)}:F> (<t:{int(new_expires_at)}:R>)",
-            ephemeral=False # Send this publicly for confirmation
+            ephemeral=False
+        )
+
+    
+    @app_commands.command(name="premium_status", description="Shows the current premium status of this server.")
+    async def premium_status_command(self, interaction: discord.Interaction):
+        
+        await interaction.response.defer(thinking=True, ephemeral=False)
+        guild_id = interaction.guild_id
+        
+        is_premium, expires_ts = is_guild_premium(guild_id)
+        
+        if is_premium:
+            if expires_ts == "LIFETIME":
+                status_message = "✨ **LIFETIME Premium** ✨"
+                footer = "This server has permanent premium access."
+            else:
+                expires_at = int(expires_ts)
+                status_message = f"✅ **Premium Active**"
+                footer = f"Expires: <t:{expires_at}:F> (<t:{expires_at}:R>)"
+            
+            color = discord.Color.green()
+        else:
+            status_message = "❌ **Standard Access**"
+            
+            # Check if there's expired data to provide more context
+            guild_config = CONFIG_DB.get(guild_id, {})
+            premium_info = guild_config.get('premium', {})
+            
+            if premium_info and premium_info.get('expires_at') and premium_info.get('expires_at') < time.time():
+                 footer = "Premium was active but has expired."
+            else:
+                 footer = "To activate premium, use the /license_activate command."
+                 
+            color = discord.Color.red()
+        
+        embed = discord.Embed(
+            title=f"Server Premium Status for {interaction.guild.name}",
+            description=status_message,
+            color=color
+        )
+        embed.set_footer(text=footer)
+        
+        await interaction.followup.send(embed=embed)
+
+
+    @app_commands.command(name="license_remove", description="Permanently deletes a license key from the database (Admin only).")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def license_remove_command(self, interaction: discord.Interaction, key: str):
+        
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        key = key.upper().strip()
+        
+        # 1. Check DB Connection
+        if DB is None:
+            await interaction.followup.send("❌ **Database not connected**. Deletion failed.", ephemeral=True)
+            return
+
+        # 2. Check if key exists
+        license_data = get_license_from_firestore(key)
+        if not license_data:
+            await interaction.followup.send(f"❌ Key `{key}` was **not found** in the database.", ephemeral=True)
+            return
+
+        # 3. Perform Deletion
+        success = delete_license_from_firestore(key)
+        
+        if success:
+            await interaction.followup.send(f"🗑️ Successfully **deleted** license key: `{key}`.", ephemeral=True)
+        else:
+            await interaction.followup.send(f"❌ **Error**: Failed to delete key `{key}` from the database.", ephemeral=True)
+
+
+    @app_commands.command(name="subscription_remove", description="Immediately removes premium status from this server (Admin only).")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def subscription_remove_command(self, interaction: discord.Interaction):
+        
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        guild_id = interaction.guild_id
+        
+        is_premium, _ = is_guild_premium(guild_id)
+        
+        if not is_premium:
+            await interaction.followup.send("⚠️ This server currently **does not have an active premium subscription** to remove.", ephemeral=True)
+            return
+            
+        # 1. Update CONFIG_DB to remove premium status
+        guild_config = CONFIG_DB.get(guild_id, {})
+        
+        # Reset the premium data
+        guild_config['premium'] = {
+            'active': False,
+            'expires_at': time.time() - 1 # Set expiration to the past for clarity
+        }
+        CONFIG_DB[guild_id] = guild_config
+        
+        # 2. Save the local config file
+        save_data('config')
+        
+        await interaction.followup.send(
+            f"🚫 Premium subscription has been **immediately removed** from this server. Access has reverted to standard.",
+            ephemeral=False
         )
 # ==============================================================================
 # Bot Run Block
