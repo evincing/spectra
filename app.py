@@ -730,37 +730,38 @@ class LicenseCog(commands.Cog):
         
         is_premium, expires_ts = is_guild_premium(guild_id)
         
+        embed = discord.Embed(title=f"Server Premium Status for {interaction.guild.name}")
+        
         if is_premium:
             if expires_ts == "LIFETIME":
-                status_message = "✨ **LIFETIME Premium** ✨"
-                footer = "This server has permanent premium access."
+                embed.description = "✨ **LIFETIME Premium** ✨"
+                embed.color = discord.Color.gold()
+                embed.set_footer(text="This server has permanent premium access.")
+                
             else:
                 expires_at = int(expires_ts)
-                status_message = f"✅ **Premium Active**"
-                footer = f"Expires: <t:{expires_at}:F> (<t:{expires_at}:R>)"
-            
-            color = discord.Color.green()
+                
+                # 🔑 CRITICAL FIX: Move the timestamp to the description or a field
+                timestamp_string = f"<t:{expires_at}:F> (<t:{expires_at}:R>)"
+                
+                embed.description = "✅ **Premium Active**"
+                embed.add_field(name="Expiration Date", value=timestamp_string, inline=False)
+                embed.color = discord.Color.green()
+                embed.set_footer(text="Premium is currently active.")
+                
         else:
-            status_message = "❌ **Standard Access**"
+            embed.description = "❌ **Standard Access**"
+            embed.color = discord.Color.red()
             
             # Check if there's expired data to provide more context
             guild_config = CONFIG_DB.get(guild_id, {})
             premium_info = guild_config.get('premium', {})
             
             if premium_info and premium_info.get('expires_at') and premium_info.get('expires_at') < time.time():
-                 footer = "Premium was active but has expired."
+                 embed.set_footer(text="Premium was active but has expired.")
             else:
-                 footer = "To activate premium, use the /license_activate command."
-                 
-            color = discord.Color.red()
-        
-        embed = discord.Embed(
-            title=f"Server Premium Status for {interaction.guild.name}",
-            description=status_message,
-            color=color
-        )
-        embed.set_footer(text=footer)
-        
+                 embed.set_footer(text="To activate premium, use the /license_activate command.")
+
         await interaction.followup.send(embed=embed)
 
 
