@@ -86,7 +86,7 @@ def initialize_firestore():
         DB = None
     
     print("--- Firebase Initialization Check Complete ---")
-    
+
 async def load_licenses_from_firestore():
     """Loads all licenses from Firestore into the in-memory LICENSE_DB."""
     global LICENSE_DB
@@ -120,6 +120,22 @@ def save_license_to_firestore(license_key: str, license_data: dict):
     except Exception as e:
         print(f"ERROR: Failed to save license {license_key} to Firestore: {e}")
         return False
+    
+def get_license_from_firestore(license_key: str):
+    """Retrieves a single license key's data from Firestore."""
+    if DB is None:
+        print("WARNING: Cannot get license. DB not initialized.")
+        return None
+    
+    try:
+        doc_ref = DB.collection('licenses').document(license_key)
+        doc = doc_ref.get()
+        if doc.exists:
+            return doc.to_dict()
+        return None
+    except Exception as e:
+        print(f"ERROR: Failed to retrieve license {license_key} from Firestore: {e}")
+        return None
 
 # ==============================================================================
 # JSON File Persistence Functions 
@@ -235,14 +251,16 @@ def is_guild_premium(guild_id: int):
         return True, "LIFETIME"
     
     try:
-        expires_ts = int(expires_ts)
+        expires_ts = float(expires_ts) # Ensure it handles floats/ints from JSON
         if expires_ts > time.time():
             return True, expires_ts
         else:
+            # License has expired
             return False, expires_ts 
     except (TypeError, ValueError):
+        # Invalid expiration format
         return False, None
-
+    
 async def update_user_cache(bot, user_id: int):
     """Fetches a user and updates the in-memory and file cache."""
     global USER_CACHE
@@ -565,19 +583,15 @@ class LicenseCog(commands.Cog):
     @app_commands.command(name="license_generate", description="Generates a new premium license key (Admin only).")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def generate_license_command(self, interaction: discord.Interaction, months: int):
-        
-        # 🔑 CRITICAL FIX: DEFERRAL MUST BE THE FIRST AWAITED CALL.
+        # (This is the working command from our last exchange)
         await interaction.response.defer(thinking=True, ephemeral=True) 
         
         global DB 
         if DB is None:
-            await interaction.followup.send("❌ **Database not connected**. Cannot generate license. Check the bot console logs for details.", ephemeral=True)
+            await interaction.followup.send("❌ **Database not connected**. Cannot generate license.", ephemeral=True)
             return
 
-        # 1. Generate unique key
         license_key = str(uuid.uuid4()).upper().replace('-', '')[:16]
-        
-        # 2. Calculate expiration timestamp
         expires_at = (datetime.now(timezone.utc) + timedelta(days=30*months)).timestamp()
         
         license_data = {
@@ -590,13 +604,10 @@ class LicenseCog(commands.Cog):
             'used_by_user': None
         }
         
-        # 3. Save to Firestore 
         success = save_license_to_firestore(license_key, license_data)
         
         if success:
-            # 4. Also update in-memory cache for immediate use
             LICENSE_DB[license_key] = license_data
-            
             await interaction.followup.send(
                 f"✅ License Key Generated for **{months} months**:\n"
                 f"```\n{license_key}```\n"
@@ -606,11 +617,93 @@ class LicenseCog(commands.Cog):
         else:
             await interaction.followup.send("❌ Failed to save license to the database. Check logs.", ephemeral=True)
     
+    
     @app_commands.command(name="license_activate", description="Activates a premium license key for this server.")
     @app_commands.checks.has_permissions(manage_guild=True)
     async def activate_license_command(self, interaction: discord.Interaction, key: str):
-         await interaction.response.send_message(f"Activation logic for key `{key}` is pending implementation. Check `license_generate` to confirm the database connection is working.", ephemeral=True)
+        
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        key = key.upper().strip()
 
+        # 1. Check DB Connection
+        if DB is None:
+            await interaction.followup.send("❌ **Database not connected**. Activation failed.", ephemeral=True)
+            return
+
+        # 2. Retrieve License Data from Firestore
+        license_data = get_license_from_firestore(key)
+        
+        if not license_data:
+            await interaction.followup.send("❌ **Invalid key**. The provided license key was not found.", ephemeral=True)
+            return
+
+        # 3. Validation Checks
+        if license_data.get('is_used'):
+            # Check if it was used by THIS guild
+            if license_data.get('used_by_guild') == interaction.guild_id:
+                await interaction.followup.send(f"⚠️ This key is already **active on this server**.", ephemeral=True)
+            else:
+                await interaction.followup.send(f"❌ This key has already been **used** on another server.", ephemeral=True)
+            return
+        
+        expires_at = license_data.get('expires_at', 0)
+        if expires_at < time.time():
+            await interaction.followup.send("❌ This key has **expired** and cannot be used.", ephemeral=True)
+            return
+        
+        # 4. Process Activation (Update Firestore)
+        guild_id = interaction.guild_id
+        user_id = interaction.user.id
+        
+        # Update the license data for saving
+        license_data['is_used'] = True
+        license_data['used_by_guild'] = guild_id
+        license_data['used_by_user'] = user_id
+        
+        success = save_license_to_firestore(key, license_data)
+        
+        if not success:
+            await interaction.followup.send("❌ **Internal Error**: Failed to update the license status in the database. Try again later.", ephemeral=True)
+            return
+            
+        # 5. Update Local Guild Config (CONFIG_DB)
+        
+        # Determine the new expiration time (in case of stacking licenses)
+        is_premium, current_expires_ts = is_guild_premium(guild_id)
+        
+        if is_premium and current_expires_ts != "LIFETIME":
+            # If current license is still active, extend from its current expiration
+            start_time = current_expires_ts
+            time_str = f"The existing premium status has been **extended**."
+        else:
+            # If not active or expired, start the new license now
+            start_time = time.time()
+            time_str = f"Premium is now **activated**."
+            
+        # Calculate the new total expiration timestamp
+        months = license_data['months']
+        new_expires_at = start_time + (30 * 86400 * months) # 30 days * 24h * 3600s * months
+        
+        # Update the CONFIG_DB
+        guild_config = CONFIG_DB.get(guild_id, {})
+        guild_config['premium'] = {
+            'active': True,
+            'key': key,
+            'activated_by': user_id,
+            'expires_at': new_expires_at 
+        }
+        CONFIG_DB[guild_id] = guild_config
+        
+        # Save the local config file
+        save_data('config') # Make sure this calls your JSON saving logic for CONFIG_FILE
+        
+        # 6. Success Message
+        await interaction.followup.send(
+            f"🎉 **Premium Activated!** 🎉\n"
+            f"**{time_str}** You have successfully redeemed a **{months}-month** license.\n"
+            f"New Expiration: <t:{int(new_expires_at)}:F> (<t:{int(new_expires_at)}:R>)",
+            ephemeral=False # Send this publicly for confirmation
+        )
 # ==============================================================================
 # Bot Run Block
 # ==============================================================================
