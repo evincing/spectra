@@ -528,35 +528,26 @@ class GiveawayCog(commands.Cog):
             
             await channel.send(final_message, reference=message)
 
+def is_owner():
+    """A simple check to confirm the user is the bot owner."""
+    async def predicate(interaction: discord.Interaction) -> bool:
+        # Note: You can also use discord.Client.is_owner(), but this simple check works.
+        return interaction.user.id == BOT_OWNER_ID
+    return app_commands.check(predicate)
 
 class UtilityCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    def is_owner():
-        """A simple check to confirm the user is the bot owner."""
-        async def predicate(interaction: discord.Interaction) -> bool:
-            return interaction.user.id == BOT_OWNER_ID
-        return app_commands.check(predicate)
-
-    @app_commands.command(name="ping", description="Shows the bot's latency.")
-    async def ping_command(self, interaction: discord.Interaction):
-        latency_ms = round(self.bot.latency * 1000)
-        await interaction.response.send_message(f"Pong! Latency is **{latency_ms}ms**.", ephemeral=True)
-
-    @app_commands.command(name="uptime", description="Shows how long the bot has been running.")
-    async def uptime_command(self, interaction: discord.Interaction):
-        uptime_seconds = time.time() - BOT_START_TIME
-        uptime_str = format_uptime(uptime_seconds)
-        await interaction.response.send_message(f"Bot Uptime: **{uptime_str}**", ephemeral=True)
-
+    # The custom is_owner check is now correctly applied here
     @app_commands.command(name="eval", description="Executes Python code (Owner only).")
-    @is_owner()
+    @is_owner() 
     async def eval_command(self, interaction: discord.Interaction, code: str):
         
         await interaction.response.defer(thinking=True, ephemeral=True)
         
-        code_block = textwrap.indent(code, '  ')
+        # Use textwrap.indent on the code to make it runnable inside the async function block
+        code_block = textwrap.indent(code, '    ') # Use 4 spaces for Python style
         
         env = {
             'bot': self.bot,
@@ -573,6 +564,7 @@ class UtilityCog(commands.Cog):
         
         try:
             with contextlib.redirect_stdout(stdout):
+                # The 'f' must be outside the parentheses for a proper f-string
                 exec(
                     f'async def func():\n{code_block}', 
                     env
@@ -595,6 +587,61 @@ class UtilityCog(commands.Cog):
             ephemeral=True
         )
 
+
+    @app_commands.command(name="ping", description="Shows the bot's latency.")
+    async def ping_command(self, interaction: discord.Interaction):
+        # NOTE: self.bot is correct here
+        latency_ms = round(self.bot.latency * 1000)
+        await interaction.response.send_message(f"Pong! Latency is **{latency_ms}ms**.", ephemeral=True)
+
+    @app_commands.command(name="uptime", description="Shows how long the bot has been running.")
+    async def uptime_command(self, interaction: discord.Interaction):
+        # NOTE: BOT_START_TIME must be defined globally
+        uptime_seconds = time.time() - BOT_START_TIME
+        uptime_str = format_uptime(uptime_seconds) # format_uptime must be defined globally
+        await interaction.response.send_message(f"Bot Uptime: **{uptime_str}**", ephemeral=True)
+
+
+    # 🔑 CORRECTED: Moved inside the Cog and using app_commands.command
+    @app_commands.command(name="set-status", description="Sets the bot's activity status (Owner only).")
+    @app_commands.describe(
+        activity_type="The type of activity (Playing, Watching, Listening, Competing).",
+        status_text="The text for the bot's status."
+    )
+    @app_commands.choices(
+        activity_type=[
+            app_commands.Choice(name="Playing", value=0),
+            app_commands.Choice(name="Watching", value=3),
+            app_commands.Choice(name="Listening", value=2),
+            app_commands.Choice(name="Competing", value=5)
+        ]
+    )
+    @is_owner() # 🔑 Using the custom owner check (or app_commands.checks.is_owner() if you prefer built-in)
+    async def set_status_command(self, interaction: discord.Interaction, activity_type: int, status_text: str):
+        
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        
+        activity_map = {
+            0: discord.ActivityType.playing,
+            3: discord.ActivityType.watching,
+            2: discord.ActivityType.listening,
+            5: discord.ActivityType.competing
+        }
+        
+        activity = discord.Activity(
+            type=activity_map.get(activity_type, discord.ActivityType.playing),
+            name=status_text
+        )
+        
+        try:
+            # Use self.bot.change_presence() or interaction.client.change_presence()
+            await self.bot.change_presence(activity=activity)
+            await interaction.followup.send(
+                f"✅ Bot status updated to **{activity_map[activity_type].name.title()} {status_text}**.", 
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.followup.send(f"❌ Failed to set status: {e}", ephemeral=True)
 
 class LicenseCog(commands.Cog):
     def __init__(self, bot):
