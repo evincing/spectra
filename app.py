@@ -38,7 +38,7 @@ GIVEAWAY_MESSAGES = {}
 CONFIG_DB = {} 
 USER_CACHE = {} 
 LICENSE_DB = {} 
-BOT_OWNER_ID = 1356850034993397781 # REPLACE THIS WITH YOUR ACTUAL USER ID
+BOT_OWNER_ID = 1356850034993397781
 USER_CACHE_LOCK = threading.Lock() 
 BOT_START_TIME = time.time() 
 # ----------------------------------------------------------------------
@@ -529,10 +529,8 @@ class GiveawayCog(commands.Cog):
             await channel.send(final_message, reference=message)
 
 def is_owner():
-    """A simple check to confirm the user is the bot owner."""
     async def predicate(interaction: discord.Interaction) -> bool:
-        # Note: You can also use discord.Client.is_owner(), but this simple check works.
-        return interaction.user.id == BOT_OWNER_ID
+        return interaction.user.id == BOT_OWNER_ID # <-- RELIES ON THIS GLOBAL VARIABLE
     return app_commands.check(predicate)
 
 class UtilityCog(commands.Cog):
