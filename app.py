@@ -201,25 +201,26 @@ def load_data():
             USER_CACHE = {}
 
 
-def save_data(data_type: str):
-    """Saves the specified data structure to its corresponding JSON file."""
-    if data_type == 'levels':
-        data_to_save = LEVELS_DB
-        file_name = LEVELS_FILE
-    elif data_type == 'giveaways':
-        data_to_save = ACTIVE_GIVEWAYS
-        file_name = GIVEAWAYS_FILE
-    elif data_type == 'config':
-        data_to_save = {str(k): v for k, v in CONFIG_DB.items()}
-        file_name = CONFIG_FILE
+def save_data(data_type):
+    """Saves the specified data (config or licenses) to its corresponding file."""
+    if data_type == 'config':
+        file_path = CONFIG_FILE
+        data_to_save = CONFIG_DB
+    elif data_type == 'licenses':
+        # Assuming you still save licenses locally for backup, though Firestore is primary
+        file_path = LICENSE_FILE
+        data_to_save = LICENSE_DB
     else:
+        print(f"ERROR: Unknown data type '{data_type}' for saving.")
         return
 
     try:
-        with open(file_name, 'w') as f: 
+        # Use 'w' (write) to overwrite the existing file with the updated data
+        with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(data_to_save, f, indent=4)
+        print(f"INFO: Successfully saved {data_type} data to {file_path}")
     except Exception as e:
-        print(f"Error saving {file_name}: {e}")
+        print(f"FATAL ERROR: Failed to save {data_type} data. Error: {e}")
 
 async def save_user_cache():
     """Saves the USER_CACHE dictionary to a JSON file asynchronously."""
@@ -258,7 +259,7 @@ def format_uptime(seconds):
 
 def is_guild_premium(guild_id: int):
     """Checks if a guild has active, non-expired premium status."""
-    guild_config = CONFIG_DB.get(guild_id, {})
+    guild_config = CONFIG_DB.get(str(guild_id), {})
     premium_info = guild_config.get('premium', {})
     
     if not premium_info or not premium_info.get('active', False):
