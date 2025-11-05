@@ -257,6 +257,20 @@ def format_uptime(seconds):
         
     return ", ".join(parts)
 
+async def get_automod_rule(guild: discord.Guild, rule_name: str) -> discord.AutoModRule | None:
+    """Retrieves an existing AutoMod rule by name, if it exists."""
+    try:
+        rules = await guild.fetch_automod_rules()
+        for rule in rules:
+            if rule.name == rule_name:
+                return rule
+        return None
+    except discord.Forbidden:
+        print(f"ERROR: Bot lacks 'Manage Guild' permission to fetch AutoMod rules in {guild.name}.")
+        return None
+    except Exception as e:
+        print(f"ERROR: Failed to fetch AutoMod rules: {e}")
+        return None
 
 def is_guild_premium(guild_id: int):
     """Checks if a guild has active, non-expired premium status."""
@@ -312,21 +326,6 @@ async def update_user_cache(bot, user_id: int):
             USER_CACHE[user_id_str] = f"Unknown User ({user_id_str})"
         await save_user_cache() 
         print(f"Could not fetch user {user_id}: {e}")
-
-    async def get_automod_rule(guild: discord.Guild, rule_name: str) -> discord.AutoModRule | None:
-        """Retrieves an existing AutoMod rule by name, if it exists."""
-        try:
-            rules = await guild.fetch_automod_rules()
-            for rule in rules:
-                if rule.name == rule_name:
-                    return rule
-            return None
-        except discord.Forbidden:
-            print(f"ERROR: Bot lacks 'Manage Guild' permission to fetch AutoMod rules in {guild.name}.")
-            return None
-        except Exception as e:
-            print(f"ERROR: Failed to fetch AutoMod rules: {e}")
-            return None
 
 # ==============================================================================
 # Bot Setup
@@ -869,6 +868,120 @@ class LicenseCog(commands.Cog):
             f"🚫 Premium subscription has been **immediately removed** from this server. Access has reverted to standard.",
             ephemeral=False
         )
+
+
+ # ==============================================================================
+# AutoMod Cog
+# ==============================================================================
+class AutoModCog(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.RULE_NAME = "Custom Slur Block List" 
+    
+    # --- Status Command ---
+    @app_commands.command(name="automod_status", description="Shows the status and words in the Custom Slur Block List.")
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def automod_status_command(self, interaction: discord.Interaction):
+        await interaction.response.defer(thinking=True, ephemeral=False)
+
+        # 🔑 Using the top-level helper function
+        rule = await get_automod_rule(interaction.guild, self.RULE_NAME)
+
+        if not rule:
+            await interaction.followup.send(
+                f"ℹ️ The **{self.RULE_NAME}** rule is not set up on this server. Use `/automod_setup` to create it.",
+                ephemeral=False
+            )
+            return
+
+        # AutoMod uses 'presets' (for built-in lists) or 'keywords' (for custom words)
+        keywords = rule.trigger.presets or rule.trigger.keywords
+        
+        embed = discord.Embed(
+            title=f"🛡️ AutoMod Rule Status: {self.RULE_NAME}",
+            color=discord.Color.blue()
+        )
+        embed.add_field(name="Status", value="✅ **Active**" if rule.enabled else "⚠️ **Disabled**", inline=True)
+        embed.add_field(name="ID", value=f"`{rule.id}`", inline=True)
+        
+        if keywords:
+            word_list = ", ".join(keywords)
+            embed.add_field(name="Blocked Words", value=f"```\n{word_list}\n```", inline=False)
+        else:
+            embed.add_field(name="Blocked Words", value="None configured (Rule active but empty).", inline=False)
+
+        action_desc = "❌ **Rule has no defined action!**"
+        for action in rule.actions:
+            if action.type == discord.AutoModActionType.block_message:
+                action_desc = "🗑️ **Blocks Message**"
+                if action.metadata.channel_id:
+                     action_desc += f" (Sends alert to <#{action.metadata.channel_id}>)"
+                break
+        
+        embed.set_footer(text=action_desc)
+
+        await interaction.followup.send(embed=embed)
+
+
+    # --- Setup/Update Command ---
+    @app_commands.command(name="automod_setup", description="Sets up or updates the Custom Slur Block List.")
+    @app_commands.checks.has_permissions(administrator=True) 
+    async def automod_setup_command(self, interaction: discord.Interaction, words: str):
+        await interaction.response.defer(thinking=True, ephemeral=True)
+        
+        # 1. Clean and split the word list
+        word_list = [w.strip() for w in words.split(',') if w.strip()]
+        if not word_list:
+            await interaction.followup.send("❌ Please provide a comma-separated list of words to block.", ephemeral=True)
+            return
+
+        # 2. Define the action: Block the message and notify the channel where the command was used
+        action = discord.AutoModAction(
+            type=discord.AutoModActionType.block_message,
+            metadata=discord.AutoModActionMetadata(
+                custom_message="Your message contains language blocked by server rules.",
+                channel_id=interaction.channel_id 
+            )
+        )
+
+        # 3. Check if the rule exists (to decide between create and edit)
+        # 🔑 Using the top-level helper function
+        existing_rule = await get_automod_rule(interaction.guild, self.RULE_NAME)
+
+        try:
+            if existing_rule:
+                # --- EDIT EXISTING RULE ---
+                updated_rule = await existing_rule.edit(
+                    name=self.RULE_NAME,
+                    enabled=True,
+                    # Setting the keywords for the custom list
+                    trigger_metadata=discord.AutoModTriggerMetadata(keywords=word_list), 
+                    actions=[action],
+                )
+                message = (f"✅ **{self.RULE_NAME}** rule updated successfully! It now blocks **{len(word_list)}** words.")
+            else:
+                # --- CREATE NEW RULE ---
+                new_rule = await interaction.guild.create_automod_rule(
+                    name=self.RULE_NAME,
+                    event=discord.AutoModEventType.message_send,
+                    trigger_type=discord.AutoModTriggerType.keyword,
+                    trigger_metadata=discord.AutoModTriggerMetadata(keywords=word_list),
+                    actions=[action],
+                    enabled=True,
+                    exempt_channels=[] 
+                )
+                message = (f"🎉 **{self.RULE_NAME}** rule created successfully! It blocks **{len(word_list)}** words.")
+            
+            await interaction.followup.send(message, ephemeral=False)
+
+        except discord.Forbidden:
+            await interaction.followup.send(
+                "❌ **Permission Error:** I need the **Administrator** or **Manage Guild** permission to create/edit AutoMod rules.",
+                ephemeral=True
+            )
+        except Exception as e:
+            print(f"AutoMod Setup Error: {e}")
+            await interaction.followup.send(f"❌ An error occurred during AutoMod setup: {e}", ephemeral=True)       
 # ==============================================================================
 # Bot Run Block
 # ==============================================================================
