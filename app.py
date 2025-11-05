@@ -364,6 +364,7 @@ async def setup_hook():
         await bot.add_cog(GiveawayCog(bot))
         await bot.add_cog(UtilityCog(bot)) 
         await bot.add_cog(LicenseCog(bot))
+        await bot.add_cog(AutoModCog(bot))
         print("Cogs Loaded successfully.")
     except Exception as e:
         print(f"Failed to load a Cog: {e}")
