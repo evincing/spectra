@@ -945,9 +945,13 @@ class AutoModCog(commands.Cog):
             )
         )
 
+        print(f"DEBUG: Attempting to fetch rule {self.RULE_NAME} for Guild {interaction.guild.id}")
+
         # 3. Check if the rule exists (to decide between create and edit)
         # 🔑 Using the top-level helper function
         existing_rule = await get_automod_rule(interaction.guild, self.RULE_NAME)
+
+        print(f"DEBUG: Rule fetch complete. Existing rule found: {existing_rule is not None}")
 
         try:
             if existing_rule:
