@@ -257,21 +257,6 @@ def format_uptime(seconds):
         
     return ", ".join(parts)
 
-async def get_automod_rule(guild: discord.Guild, rule_name: str) -> discord.AutoModRule | None:
-    """Retrieves an existing AutoMod rule by name, if it exists."""
-    try:
-        rules = await guild.fetch_automod_rules()
-        for rule in rules:
-            if rule.name == rule_name:
-                return rule
-        return None
-    except discord.Forbidden:
-        print(f"ERROR: Bot lacks 'Manage Guild' permission to fetch AutoMod rules in {guild.name}.")
-        return None
-    except Exception as e:
-        print(f"ERROR: Failed to fetch AutoMod rules: {e}")
-        return None
-
 def is_guild_premium(guild_id: int):
     """Checks if a guild has active, non-expired premium status."""
     guild_config = CONFIG_DB.get(str(guild_id), {})
@@ -326,6 +311,21 @@ async def update_user_cache(bot, user_id: int):
             USER_CACHE[user_id_str] = f"Unknown User ({user_id_str})"
         await save_user_cache() 
         print(f"Could not fetch user {user_id}: {e}")
+
+async def get_automod_rule(guild: discord.Guild, rule_name: str) -> discord.AutoModRule | None:
+    """Retrieves an existing AutoMod rule by name, if it exists."""
+    try:
+        rules = await guild.fetch_automod_rules()
+        for rule in rules:
+            if rule.name == rule_name:
+                return rule
+        return None
+    except discord.Forbidden:
+        print(f"ERROR: Bot lacks 'Manage Guild' permission to fetch AutoMod rules in {guild.name}.")
+        return None
+    except Exception as e:
+        print(f"ERROR: Failed to fetch AutoMod rules: {e}")
+        return None
 
 # ==============================================================================
 # Bot Setup
