@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 import uuid
 import firebase_admin
 from firebase_admin import credentials, firestore, exceptions
-from keep_alive import keep_alive, set_bot_ready 
+from keep_alive import keep_alive
 
 # Load environment variables from .env file
 load_dotenv()
@@ -325,7 +325,7 @@ async def get_automod_rule(guild: discord.Guild, rule_name: str) -> discord.Auto
         return None
     except Exception as e:
         print(f"ERROR: Failed to fetch AutoMod rules: {e}")
-        return None 
+        return None
 
 # ==============================================================================
 # Bot Setup
@@ -384,7 +384,6 @@ async def on_ready():
     
     # We moved initialize_firestore() out, so we only run the async license load here.
     await load_licenses_from_firestore()
-    set_bot_ready(True)
     
     print('Bot is ready to accept commands.')
 
@@ -1001,17 +1000,7 @@ if __name__ == "__main__":
     initialize_firestore()
 
     bot_token = os.environ.get("DISCORD_TOKEN")
-if not bot_token:
+    if not bot_token:
         print("ERROR: DISCORD_TOKEN environment variable not set.")
-        exit(1)
-
-try:
-        # Run the Discord bot
+    else:
         bot.run(bot_token)
-except discord.errors.HTTPException as e:
-        print(f"FATAL ERROR: Failed to connect to Discord or connection lost. {e}")
-        print("This is often caused by an invalid token or connection issues.")
-        # --- CRITICAL HEALTH CHECK INTEGRATION ---
-        set_bot_ready(False) # Ensure health check fails if Discord fails
-        # --- END CRITICAL INTEGRATION ---
-        exit(1)
