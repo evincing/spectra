@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: spectra-bot-dashboard
+    env: python
+    plan: standard
+    buildCommand: pip install -r requirements.txt
+    startCommand: python run_all.py
+    healthCheckPath: /
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: DISCORD_CLIENT_ID
+        sync: false
+      - key: DISCORD_CLIENT_SECRET
+        sync: false
+      - key: DISCORD_REDIRECT_URI
+        value: https://your-render-url.onrender.com/callback
+      - key: FIREBASE_CREDENTIALS
+        sync: false
+      - key: PORT
+        value: "5000"
