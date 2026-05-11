@@ -39,7 +39,7 @@ GIVEAWAY_MESSAGES = {}
 CONFIG_DB = {}
 USER_CACHE = {}
 LICENSE_DB = {}
-BOT_OWNER_ID = 1356850034993397781
+BOT_OWNER_ID = 1436238952389410837
 USER_CACHE_LOCK = threading.Lock()
 BOT_START_TIME = time.time()
 # ----------------------------------------------------------------------
@@ -415,7 +415,11 @@ async def on_ready():
 
 
 @bot.tree.error
-async def on_app_command_error(interaction: discord.Interaction, error: commands.CommandError):
+async def on_app_command_error(interaction: discord.Interaction, error: Exception):
+    print(f"DEBUG: App command error occurred - Type: {type(error).__name__}, Error: {error}")
+    import traceback
+    traceback.print_exc()
+    
     if isinstance(error, commands.MissingPermissions):
         if not interaction.response.is_done():
             await interaction.response.send_message(
@@ -434,6 +438,12 @@ async def on_app_command_error(interaction: discord.Interaction, error: commands
             await interaction.followup.send(f"Missing argument. Usage: `/{interaction.command.name} {interaction.command.usage}`", ephemeral=True)
     elif isinstance(error, app_commands.errors.CommandInvokeError) and isinstance(error.original, discord.errors.NotFound):
         print(f"Error handler avoided 'Unknown interaction' failure. Original command error was: {error.original}")
+    elif isinstance(error, app_commands.CheckFailure):
+        print(f"Check failed: {error}")
+        if not interaction.response.is_done():
+            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+        else:
+            await interaction.followup.send("You do not have permission to use this command.", ephemeral=True)
     else:
         print(f"An unexpected error occurred: {error}")
         if not interaction.response.is_done():
