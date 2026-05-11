@@ -90,13 +90,17 @@ def has_guild_permission(user_id, guild_id, permission):
 
 def discord_oauth_url():
     """Generates the Discord OAuth2 URL."""
-    return (
+    print(f"DEBUG: DISCORD_CLIENT_ID={DISCORD_CLIENT_ID}")
+    print(f"DEBUG: DISCORD_REDIRECT_URI={DISCORD_REDIRECT_URI}")
+    url = (
         f"https://discord.com/api/oauth2/authorize"
         f"?client_id={DISCORD_CLIENT_ID}"
         f"&redirect_uri={requests.utils.quote(DISCORD_REDIRECT_URI, safe='')}"
         f"&response_type=code"
         f"&scope=identify%20guilds"
     )
+    print(f"DEBUG: OAuth URL={url}")
+    return url
 
 def exchange_code_for_token(code):
     """Exchanges OAuth2 code for access token."""
