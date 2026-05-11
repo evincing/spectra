@@ -42,7 +42,7 @@ if json_creds_string:
     except Exception as e:
         print(f"ERROR: Could not initialize Firebase: {e}")
 
-BOT_OWNER_ID = 1356850034993397781
+BOT_OWNER_ID = 1436238952389410837
 HOST = '0.0.0.0'
 PORT = int(os.environ.get('PORT', 5000))
 
