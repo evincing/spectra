@@ -423,31 +423,31 @@ async def on_app_command_error(interaction: discord.Interaction, error: Exceptio
     if isinstance(error, commands.MissingPermissions):
         if not interaction.response.is_done():
             await interaction.response.send_message(
-                f"You do not have the required permission to use this command: `{error.missing_permissions[0]}`",
+                f"<:x_mark:1503628893318414447> You do not have the required permission to use this command: `{error.missing_permissions[0]}`",
                 ephemeral=True
             )
         else:
-            await interaction.followup.send(f"You do not have the required permission to use this command: `{error.missing_permissions[0]}`", ephemeral=True)
+            await interaction.followup.send(f" <:x_mark:1503628893318414447> You do not have the required permission to use this command: `{error.missing_permissions[0]}`", ephemeral=True)
     elif isinstance(error, commands.MissingRequiredArgument):
         if not interaction.response.is_done():
             await interaction.response.send_message(
-                f"Missing argument. Usage: `/{interaction.command.name} {interaction.command.usage}`",
+                f"<:warn:1503628892378894446> Missing argument. Usage: `/{interaction.command.name} {interaction.command.usage}`",
                 ephemeral=True
             )
         else:
-            await interaction.followup.send(f"Missing argument. Usage: `/{interaction.command.name} {interaction.command.usage}`", ephemeral=True)
+            await interaction.followup.send(f"<:warn:1503628892378894446> Missing argument. Usage: `/{interaction.command.name} {interaction.command.usage}`", ephemeral=True)
     elif isinstance(error, app_commands.errors.CommandInvokeError) and isinstance(error.original, discord.errors.NotFound):
         print(f"Error handler avoided 'Unknown interaction' failure. Original command error was: {error.original}")
     elif isinstance(error, app_commands.CheckFailure):
         print(f"Check failed: {error}")
         if not interaction.response.is_done():
-            await interaction.response.send_message("You do not have permission to use this command.", ephemeral=True)
+            await interaction.response.send_message("<:x_mark:1503628893318414447> You do not have permission to use this command.", ephemeral=True)
         else:
-            await interaction.followup.send("You do not have permission to use this command.", ephemeral=True)
+            await interaction.followup.send("<:x_mark:1503628893318414447> You do not have permission to use this command.", ephemeral=True)
     else:
         print(f"An unexpected error occurred: {error}")
         if not interaction.response.is_done():
-            await interaction.response.send_message("An unexpected error occurred while executing the command.", ephemeral=True)
+            await interaction.response.send_message("<:warn:1503628892378894446> An unexpected error occurred while executing the command.", ephemeral=True)
 
 
 # ==============================================================================
@@ -552,7 +552,7 @@ class GiveawayCog(commands.Cog):
 
             participants = list(users)
             if not participants:
-                final_message = "😢 Giveaway ended! No one entered the giveaway."
+                final_message = "<:warn:1503628892378894446> Giveaway ended! No one entered the giveaway."
             else:
                 num_winners = min(data['winner_count'], len(participants))
                 winners = random.sample(participants, num_winners)
@@ -575,7 +575,7 @@ class UtilityCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="eval", description="Executes Python code (Owner only).")
+    @app_commands.command(name="eval", description="<:crown:1503629761686274169> Executes Python code (Bot owner only).")
     @is_owner()
     async def eval_command(self, interaction: discord.Interaction, code: str):
         await interaction.response.defer(thinking=True, ephemeral=True)
@@ -606,20 +606,20 @@ class UtilityCog(commands.Cog):
             else:
                 output = '```py\nExecuted successfully with no output.```'
 
-        await interaction.followup.send(f"**Evaluation Complete**:\n{output}", ephemeral=True)
+        await interaction.followup.send(f"**<:check:1503628891258884166> Evaluation Complete**:\n{output}", ephemeral=True)
 
     @app_commands.command(name="ping", description="Shows the bot's latency.")
     async def ping_command(self, interaction: discord.Interaction):
         latency_ms = round(self.bot.latency * 1000)
-        await interaction.response.send_message(f"Pong! Latency is **{latency_ms}ms**.", ephemeral=True)
+        await interaction.response.send_message(f"<:online:1503629760503222283> Pong! Latency is **{latency_ms}ms**.", ephemeral=True)
 
     @app_commands.command(name="uptime", description="Shows how long the bot has been running.")
     async def uptime_command(self, interaction: discord.Interaction):
         uptime_seconds = time.time() - BOT_START_TIME
         uptime_str = format_uptime(uptime_seconds)
-        await interaction.response.send_message(f"Bot Uptime: **{uptime_str}**", ephemeral=True)
+        await interaction.response.send_message(f"<:online:1503629760503222283> Bot Uptime: **{uptime_str}**", ephemeral=True)
 
-    @app_commands.command(name="set-status", description="Sets the bot's activity status (Owner only).")
+    @app_commands.command(name="set-status", description="Sets the bot's activity status. (<:crown:1503629761686274169> Bot owner only).")
     @app_commands.describe(
         activity_type="The type of activity (Playing, Watching, Listening, Competing).",
         status_text="The text for the bot's status."
@@ -648,11 +648,11 @@ class UtilityCog(commands.Cog):
         try:
             await self.bot.change_presence(activity=activity)
             await interaction.followup.send(
-                f"✅ Bot status updated to **{activity_map[activity_type].name.title()} {status_text}**.",
+                f"<:check:1503628891258884166> Bot status updated to **{activity_map[activity_type].name.title()} {status_text}**.",
                 ephemeral=True
             )
         except Exception as e:
-            await interaction.followup.send(f"❌ Failed to set status: {e}", ephemeral=True)
+            await interaction.followup.send(f"<:x_mark:1503628893318414447> Failed to set status: {e}", ephemeral=True)
 
 
 class LicenseCog(commands.Cog):
@@ -678,12 +678,12 @@ class LicenseCog(commands.Cog):
         await interaction.response.defer(thinking=True, ephemeral=True)
 
         if DB is None:
-            await interaction.followup.send("❌ **Database not connected**. Cannot generate license.", ephemeral=True)
+            await interaction.followup.send("<:x_mark:1503628893318414447> **Database not connected**. Cannot generate license.", ephemeral=True)
             return
 
         if not lifetime and months <= 0:
             await interaction.followup.send(
-                "❌ Please specify either `months` (greater than 0) or set `lifetime: True`.",
+                "<:x_mark:1503628893318414447> Please specify either `months` (greater than 0) or set `lifetime: True`.",
                 ephemeral=True
             )
             return
@@ -714,13 +714,13 @@ class LicenseCog(commands.Cog):
         if success:
             LICENSE_DB[license_key] = license_data
             await interaction.followup.send(
-                f"✅ License Key Generated for {duration_str}:\n"
+                f"<:check:1503628891258884166> License Key Generated for {duration_str}:\n"
                 f"```\n{license_key}```\n"
                 f"Expires: {expiry_display}",
                 ephemeral=True
             )
         else:
-            await interaction.followup.send("❌ Failed to save license to the database. Check logs.", ephemeral=True)
+            await interaction.followup.send("<:x_mark:1503628893318414447> Failed to save license to the database. Check logs.", ephemeral=True)
 
     @app_commands.command(name="license_activate", description="Activates a premium license key for this server.")
     @app_commands.checks.has_permissions(manage_guild=True)
@@ -729,26 +729,26 @@ class LicenseCog(commands.Cog):
         key = key.upper().strip()
 
         if DB is None:
-            await interaction.followup.send("❌ **Database not connected**. Activation failed.", ephemeral=True)
+            await interaction.followup.send("<:x_mark:1503628893318414447> **Database not connected**. Activation failed.", ephemeral=True)
             return
 
         license_data = get_license_from_firestore(key)
         if not license_data:
-            await interaction.followup.send("❌ **Invalid key**. The provided license key was not found.", ephemeral=True)
+            await interaction.followup.send("<:x_mark:1503628893318414447> **Invalid key**. The provided license key was not found.", ephemeral=True)
             return
 
         # Validation: already used
         if license_data.get('is_used'):
             if license_data.get('used_by_guild') == interaction.guild_id:
-                await interaction.followup.send("⚠️ This key is already **active on this server**.", ephemeral=True)
+                await interaction.followup.send("<:warn:1503628892378894446> This key is already **active on this server**.", ephemeral=True)
             else:
-                await interaction.followup.send("❌ This key has already been **used** on another server.", ephemeral=True)
+                await interaction.followup.send("<:x_mark:1503628893318414447> This key has already been **used** on another server.", ephemeral=True)
             return
 
         # FIX: Handle "LIFETIME" string safely before comparing to time.time()
         expires_at = license_data.get('expires_at', 0)
         if expires_at != "LIFETIME" and float(expires_at) < time.time():
-            await interaction.followup.send("❌ This key has **expired** and cannot be used.", ephemeral=True)
+            await interaction.followup.send("<:x_mark:1503628893318414447> This key has **expired** and cannot be used.", ephemeral=True)
             return
 
         # Mark license as used in Firestore
@@ -762,7 +762,7 @@ class LicenseCog(commands.Cog):
         success = save_license_to_firestore(key, license_data)
         if not success:
             await interaction.followup.send(
-                "❌ **Internal Error**: Failed to update the license status in the database. Try again later.",
+                "<:x_mark:1503628893318414447> **Internal Error**: Failed to update the license status in the database. Try again later.",
                 ephemeral=True
             )
             return
@@ -773,7 +773,7 @@ class LicenseCog(commands.Cog):
 
         if is_lifetime_key:
             new_expires_at = "LIFETIME"
-            time_str = "Premium is now **activated** with **Lifetime** access."
+            time_str = "<:check:1503628891258884166> Premium is now **activated** with **Lifetime** access."
         else:
             months = license_data['months']
             if is_premium and current_expires_ts not in (None, "LIFETIME"):
@@ -781,7 +781,7 @@ class LicenseCog(commands.Cog):
                 time_str = "The existing premium status has been **extended**."
             else:
                 start_time = time.time()
-                time_str = "Premium is now **activated**."
+                time_str = "<:check:1503628891258884166> Premium is now **activated**."
             new_expires_at = start_time + (30 * 86400 * months)
 
         # Update CONFIG_DB and save to both local file AND Firestore
@@ -807,7 +807,7 @@ class LicenseCog(commands.Cog):
 
         await interaction.followup.send(
             f"🎉 **Premium Activated!** 🎉\n"
-            f"**{time_str}** You have successfully redeemed a **{months_str}** license.\n"
+            f"**{time_str}** <:check:1503628891258884166> You have successfully redeemed a **{months_str}** license.\n"
             f"{expiry_line}",
             ephemeral=False
         )
@@ -821,18 +821,18 @@ class LicenseCog(commands.Cog):
 
         if is_premium:
             if expires_ts == "LIFETIME":
-                embed.description = "✨ **LIFETIME Premium** ✨"
+                embed.description = "✨ **Lifetime Premium** ✨"
                 embed.color = discord.Color.gold()
                 embed.set_footer(text="This server has permanent premium access.")
             else:
                 expires_at = int(expires_ts)
                 timestamp_string = f"<t:{expires_at}:F> (<t:{expires_at}:R>)"
-                embed.description = "✅ **Premium Active**"
+                embed.description = "<:check:1503628891258884166> **Premium Active**"
                 embed.add_field(name="Expiration Date", value=timestamp_string, inline=False)
                 embed.color = discord.Color.green()
                 embed.set_footer(text="Premium is currently active.")
         else:
-            embed.description = "❌ **Standard Access**"
+            embed.description = "<:x_mark:1503628893318414447> **Standard Access**"
             embed.color = discord.Color.red()
             guild_config = CONFIG_DB.get(str(interaction.guild_id), {})
             premium_info = guild_config.get('premium', {})
@@ -857,21 +857,21 @@ class LicenseCog(commands.Cog):
         key = key.upper().strip()
 
         if DB is None:
-            await interaction.followup.send("❌ **Database not connected**. Deletion failed.", ephemeral=True)
+            await interaction.followup.send("<:x_mark:1503628893318414447> **Database not connected**. Deletion failed.", ephemeral=True)
             return
 
         license_data = get_license_from_firestore(key)
         if not license_data:
-            await interaction.followup.send(f"❌ Key `{key}` was **not found** in the database.", ephemeral=True)
+            await interaction.followup.send(f"<:x_mark:1503628893318414447> Key `{key}` was **not found** in the database.", ephemeral=True)
             return
 
         success = delete_license_from_firestore(key)
         if success:
-            await interaction.followup.send(f"🗑️ Successfully **deleted** license key: `{key}`.", ephemeral=True)
+            await interaction.followup.send(f"<:check:1503628891258884166> Successfully **deleted** license key: `{key}`.", ephemeral=True)
         else:
-            await interaction.followup.send(f"❌ **Error**: Failed to delete key `{key}` from the database.", ephemeral=True)
+            await interaction.followup.send(f"<:x_mark:1503628893318414447> **Error**: Failed to delete key `{key}` from the database.", ephemeral=True)
 
-    @app_commands.command(name="subscription_remove", description="Immediately removes premium status from this server (Admin only).")
+    @app_commands.command(name="subscription_remove", description="Immediately removes premium status from this server (Server admins only).")
     @app_commands.checks.has_permissions(administrator=True)
     async def subscription_remove_command(self, interaction: discord.Interaction):
         await interaction.response.defer(thinking=True, ephemeral=True)
@@ -880,7 +880,7 @@ class LicenseCog(commands.Cog):
         is_premium, _ = is_guild_premium(interaction.guild_id)
         if not is_premium:
             await interaction.followup.send(
-                "⚠️ This server currently **does not have an active premium subscription** to remove.",
+                "<:warn:1503628892378894446> This server currently does **__not__** have an active premium subscription to remove.",
                 ephemeral=True
             )
             return
@@ -896,7 +896,7 @@ class LicenseCog(commands.Cog):
         save_guild_config_to_firestore(guild_id_str, guild_config)
 
         await interaction.followup.send(
-            "🚫 Premium subscription has been **immediately removed** from this server. Access has reverted to standard.",
+            "<:check:1503628891258884166> Premium subscription has been immediately **__removed__** from this server. Access has been reverted to standard.",
             ephemeral=False
         )
 
@@ -928,7 +928,7 @@ class AutoModCog(commands.Cog):
             title=f"🛡️ AutoMod Rule Status: {self.RULE_NAME}",
             color=discord.Color.blue()
         )
-        embed.add_field(name="Status", value="✅ **Active**" if rule.enabled else "⚠️ **Disabled**", inline=True)
+        embed.add_field(name="Status", value="<:check:1503628891258884166> **Active**" if rule.enabled else "<:warn:1503628892378894446> **Disabled**", inline=True)
         embed.add_field(name="ID", value=f"`{rule.id}`", inline=True)
 
         if keywords:
@@ -937,7 +937,7 @@ class AutoModCog(commands.Cog):
         else:
             embed.add_field(name="Blocked Words", value="None configured (Rule active but empty).", inline=False)
 
-        action_desc = "❌ **Rule has no defined action!**"
+        action_desc = "<:x_mark:1503628893318414447> **Rule has no defined action!**"
         for action in rule.actions:
             if action.type == discord.AutoModActionType.block_message:
                 action_desc = "🗑️ **Blocks Message**"
@@ -954,7 +954,7 @@ class AutoModCog(commands.Cog):
 
         word_list = [w.strip() for w in words.split(',') if w.strip()]
         if not word_list:
-            await interaction.followup.send("❌ Please provide a comma-separated list of words to block.", ephemeral=True)
+            await interaction.followup.send("<:x_mark:1503628893318414447> Please provide a comma-separated list of words to block.", ephemeral=True)
             return
 
         action = discord.AutoModAction(
@@ -977,7 +977,7 @@ class AutoModCog(commands.Cog):
                     trigger_metadata=discord.AutoModTriggerMetadata(keywords=word_list),
                     actions=[action],
                 )
-                message = f"✅ **{self.RULE_NAME}** rule updated successfully! It now blocks **{len(word_list)}** words."
+                message = f"<:check:1503628891258884166> **{self.RULE_NAME}** rule updated successfully! It now blocks **{len(word_list)}** words."
             else:
                 await interaction.guild.create_automod_rule(
                     name=self.RULE_NAME,
@@ -994,12 +994,12 @@ class AutoModCog(commands.Cog):
 
         except discord.Forbidden:
             await interaction.followup.send(
-                "❌ **Permission Error:** I need the **Administrator** or **Manage Guild** permission to create/edit AutoMod rules.",
+                "<:x_mark:1503628893318414447> **Permission Error:** I need the **Administrator** or **Manage Guild** permission to create/edit AutoMod rules.",
                 ephemeral=True
             )
         except Exception as e:
             print(f"AutoMod Setup Error: {e}")
-            await interaction.followup.send(f"❌ An error occurred during AutoMod setup: {e}", ephemeral=True)
+            await interaction.followup.send(f"<:x_mark:1503628893318414447> An error occurred during AutoMod setup: {e}", ephemeral=True)
 
 
 # ==============================================================================
