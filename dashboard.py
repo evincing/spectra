@@ -299,6 +299,8 @@ def logout():
 def home():
     """Home page."""
     user = get_discord_user()
+    invite_bot_url = f"https://discord.com/api/oauth2/authorize?client_id={DISCORD_CLIENT_ID}&permissions=8&integration_type=0&scope=bot+applications.commands"
+    
     html = """
     <!DOCTYPE html>
     <html lang="en">
@@ -322,10 +324,11 @@ def home():
             h1 { font-size: 3.5rem; font-weight: 800; margin-bottom: 16px; letter-spacing: -1px; }
             .accent { color: #5865F2; }
             p { font-size: 1.25rem; margin-bottom: 40px; color: #94a3b8; line-height: 1.6; }
-            .btn-group { display: flex; gap: 16px; justify-content: center; }
+            .btn-group { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
             .btn { 
                 display: inline-flex; 
                 align-items: center; 
+                gap: 10px;
                 padding: 14px 28px; 
                 background-color: #5865F2; 
                 color: white; 
@@ -342,6 +345,7 @@ def home():
             .btn-secondary:hover { background-color: #3b3e44; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3); }
             .btn-danger { background-color: #da373c; }
             .btn-danger:hover { background-color: #a12829; }
+            .discord-logo { width: 24px; height: 24px; }
         </style>
     </head>
     <body>
@@ -357,8 +361,13 @@ def home():
             """
     else:
         html += f"""
-                <a href="{url_for('login')}" class="btn">Login with Discord</a>
-                <a href="#" class="btn btn-secondary">Invite Bot</a>
+                <a href="{url_for('login')}" class="btn">
+                    <svg class="discord-logo" viewBox="0 0 127.14 96.36" xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+                        <path d="M107.7,8.07A105.15,105.15,0,0,0,81.47,0a72.06,72.06,0,0,0-3.36,6.83A99.68,99.68,0,0,0,49,6.83,72.37,72.37,0,0,0,45.64,0A105.89,105.89,0,0,0,19.39,8.09C2.79,32.65-1.71,56.6.54,80.21h0A105.73,105.73,0,0,0,32.71,96.36,77.7,77.7,0,0,0,39.6,85.25a68.42,68.42,0,0,1-10.85-5.18c.91-.66,1.8-1.34,2.66-2a77.15,77.15,0,0,0,64.32,0c.87.71,1.76,1.39,2.66,2a68.68,68.68,0,0,1-10.87,5.22,77,77,0,0,0,6.89,11.1A105.25,105.25,0,0,0,126.6,80.22h0C129.24,52.84,122.09,29.11,107.7,8.07ZM42.45,65.69C36.18,65.69,31,60.55,31,53.88s5-11.81,11.47-11.81S54,47.16,53.89,53.88,48.84,65.69,42.45,65.69Zm42.24,0C78.41,65.69,73.25,60.55,73.25,53.88s5-11.81,11.44-11.81S96.23,47.16,96.12,53.88,91.08,65.69,84.69,65.69Z"/>
+                    </svg>
+                    Login with Discord
+                </a>
+                <a href="{invite_bot_url}" class="btn btn-secondary">Invite Bot</a>
             """
     html += """
             </div>
@@ -381,16 +390,24 @@ def dashboard():
         guild_id = guild['id']
         guild_name = guild['name']
         admin = guild.get('owner', False)
+        guild_icon = guild.get('icon')
+        
+        # Build icon HTML
+        if guild_icon:
+            icon_url = f"https://cdn.discordapp.com/icons/{guild_id}/{guild_icon}.png?size=128"
+            icon_html = f'<img src="{icon_url}" alt="{guild_name}" style="width: 100%; height: 100%; border-radius: 16px; object-fit: cover;">'
+        else:
+            icon_html = f'<span>{guild_name[0].upper()}</span>'
         
         if admin or (guild.get('permissions') & 0x8):
             guild_cards += f"""
             <a href="{url_for('guild_settings', guild_id=guild_id)}" class="guild-card">
                 <div class="guild-avatar">
-                    <span>{guild_name[0].upper()}</span>
+                    {icon_html}
                 </div>
                 <div class="guild-info">
                     <div class="guild-name">{guild_name}</div>
-                    <div class="guild-role">{'Server Owner' if admin else 'Administrator'}</div>
+                    <div class="guild-role">{'👑 Server Owner' if admin else 'Administrator'}</div>
                 </div>
                 <div class="guild-arrow">→</div>
             </a>
@@ -794,60 +811,155 @@ def guild_settings(guild_id):
         <title>{guild['name']} - Spectra Dashboard</title>
         <style>
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-            body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #36393f; color: #dcddde; }}
+            body {{ 
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+                background-color: #0f111a; 
+                color: #dcddde; 
+                min-height: 100vh; 
+            }}
             
-            .navbar {{ background: #2c2f33; padding: 15px 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); display: flex; justify-content: space-between; align-items: center; }}
-            .navbar h1 {{ color: #7289da; font-size: 1.5em; }}
-            .navbar a {{ color: #dcddde; text-decoration: none; margin-left: 20px; transition: color 0.3s; cursor: pointer; }}
-            .navbar a:hover {{ color: #7289da; }}
+            .nav {{ 
+                padding: 20px 40px; 
+                display: flex; 
+                justify-content: space-between; 
+                align-items: center; 
+                background: #11131e;
+                border-bottom: 1px solid #1e2235;
+            }}
+            .nav h2 {{ font-size: 1.5rem; color: #fff; font-weight: 700; }}
+            .nav-user {{ display: flex; align-items: center; gap: 15px; }}
+            .nav-link {{ color: #94a3b8; text-decoration: none; font-size: 0.9rem; cursor: pointer; }}
+            .nav-link:hover {{ color: #fff; }}
+
+            .wrapper {{ display: flex; height: calc(100vh - 65px); }}
             
-            .wrapper {{ display: flex; height: calc(100vh - 60px); }}
-            
-            .sidebar {{ width: 250px; background: #2c2f33; padding: 20px 0; box-shadow: 2px 0 10px rgba(0,0,0,0.3); overflow-y: auto; }}
-            .sidebar-item {{ padding: 12px 20px; color: #b9bbbe; cursor: pointer; transition: all 0.3s; display: flex; align-items: center; text-decoration: none; }}
-            .sidebar-item:hover {{ background: #3b3e44; color: #7289da; }}
-            .sidebar-item.active {{ background: #7289da; color: #fff; border-left: 4px solid #fff; }}
+            .sidebar {{ 
+                width: 250px; 
+                background: #11131e;
+                padding: 20px 0; 
+                border-right: 1px solid #1e2235;
+                overflow-y: auto; 
+            }}
+            .sidebar-item {{ 
+                padding: 12px 20px; 
+                color: #94a3b8; 
+                cursor: pointer; 
+                transition: all 0.3s; 
+                display: flex; 
+                align-items: center; 
+                text-decoration: none; 
+            }}
+            .sidebar-item:hover {{ background: rgba(88, 101, 242, 0.1); color: #5865F2; }}
+            .sidebar-item.active {{ 
+                background: rgba(88, 101, 242, 0.2); 
+                color: #5865F2; 
+                border-left: 3px solid #5865F2; 
+                padding-left: 17px;
+            }}
             .sidebar-item-icon {{ margin-right: 10px; font-size: 1.2em; }}
             
             .content {{ flex: 1; overflow-y: auto; padding: 40px; }}
             
-            .content h2 {{ color: #7289da; margin-bottom: 20px; font-size: 2em; }}
+            .content h2 {{ color: #fff; margin-bottom: 20px; font-size: 2em; font-weight: 700; }}
             
-            .premium-badge {{ display: inline-block; background: #f47fff; color: #fff; padding: 5px 10px; border-radius: 4px; font-size: 0.9em; margin-bottom: 20px; }}
+            .premium-badge {{ display: inline-block; background: #f47fff; color: #fff; padding: 8px 16px; border-radius: 6px; font-size: 0.9em; margin-bottom: 20px; font-weight: 600; }}
             
-            .section {{ background: #2f3136; padding: 20px; border-radius: 8px; margin-bottom: 20px; }}
-            .section h3 {{ color: #7289da; margin-bottom: 15px; }}
-            .section p {{ color: #b9bbbe; margin-bottom: 10px; }}
+            .section {{ 
+                background: #161925; 
+                padding: 24px; 
+                border-radius: 12px; 
+                margin-bottom: 20px; 
+                border: 1px solid #1e2235;
+            }}
+            .section h3 {{ color: #fff; margin-bottom: 15px; font-weight: 600; }}
+            .section p {{ color: #94a3b8; margin-bottom: 10px; }}
+            .section code {{ background: #0f111a; padding: 2px 6px; border-radius: 4px; color: #5865F2; }}
             
             .form-group {{ margin-bottom: 15px; }}
-            .form-group label {{ display: block; color: #b9bbbe; margin-bottom: 5px; }}
-            .form-group input, .form-group textarea, .form-group select {{ width: 100%; padding: 10px; background: #36393f; color: #dcddde; border: 1px solid #4f545c; border-radius: 4px; font-family: inherit; }}
-            .form-group input:focus, .form-group textarea:focus, .form-group select:focus {{ outline: none; border-color: #7289da; box-shadow: 0 0 0 3px rgba(114, 137, 218, 0.1); }}
+            .form-group label {{ display: block; color: #94a3b8; margin-bottom: 8px; font-weight: 500; }}
+            .form-group input, .form-group textarea, .form-group select {{ 
+                width: 100%; 
+                padding: 10px 12px; 
+                background: #0f111a; 
+                color: #dcddde; 
+                border: 1px solid #1e2235; 
+                border-radius: 6px; 
+                font-family: inherit; 
+                transition: all 0.2s;
+            }}
+            .form-group input:focus, .form-group textarea:focus, .form-group select:focus {{ 
+                outline: none; 
+                border-color: #5865F2; 
+                box-shadow: 0 0 0 3px rgba(88, 101, 242, 0.1); 
+            }}
             
-            .btn {{ display: inline-block; padding: 10px 20px; background: #7289da; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 1em; transition: all 0.3s; }}
-            .btn:hover {{ background: #5a77c4; }}
-            .btn-danger {{ background: #f04747; }}
-            .btn-danger:hover {{ background: #d83c3c; }}
+            .form-row {{ display: flex; gap: 10px; }}
+            .form-row input {{ flex: 1; }}
             
-            .status {{ padding: 10px 15px; border-radius: 4px; margin-bottom: 15px; }}
+            .btn {{ 
+                display: inline-block; 
+                padding: 10px 20px; 
+                background: #5865F2; 
+                color: white; 
+                border: none; 
+                border-radius: 6px; 
+                cursor: pointer; 
+                font-size: 1em; 
+                font-weight: 600;
+                transition: all 0.3s; 
+            }}
+            .btn:hover {{ background: #4752c4; transform: translateY(-1px); }}
+            .btn-danger {{ background: #da373c; }}
+            .btn-danger:hover {{ background: #a12829; }}
+            .btn-small {{ padding: 8px 12px; font-size: 0.9em; }}
+            
+            .status {{ padding: 10px 15px; border-radius: 6px; margin-bottom: 15px; display: none; }}
+            .status.show {{ display: block; }}
             .status.success {{ background: #43b581; color: white; }}
             .status.error {{ background: #f04747; color: white; }}
-            .status.info {{ background: #5a77c4; color: white; }}
             
-            .word-list {{ background: #36393f; padding: 10px; border-radius: 4px; margin-top: 10px; max-height: 200px; overflow-y: auto; }}
-            .word-list-item {{ padding: 5px 10px; background: #2f3136; margin: 5px 0; border-radius: 3px; display: flex; justify-content: space-between; align-items: center; }}
-            .word-list-item button {{ padding: 5px 10px; background: #f04747; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 0.9em; }}
+            .word-list {{ background: #0f111a; padding: 12px; border-radius: 6px; margin-top: 10px; max-height: 300px; overflow-y: auto; border: 1px solid #1e2235; }}
+            .word-list-item {{ 
+                padding: 8px 12px; 
+                background: #161925; 
+                margin: 6px 0; 
+                border-radius: 4px; 
+                display: flex; 
+                justify-content: space-between; 
+                align-items: center; 
+                border: 1px solid #1e2235;
+            }}
+            .word-list-item button {{ 
+                padding: 4px 8px; 
+                background: #f04747; 
+                color: white; 
+                border: none; 
+                border-radius: 3px; 
+                cursor: pointer; 
+                font-size: 0.85em;
+            }}
+            
+            .giveaway-list {{ background: #0f111a; padding: 12px; border-radius: 6px; margin-top: 10px; max-height: 300px; overflow-y: auto; border: 1px solid #1e2235; }}
+            .giveaway-item {{ 
+                padding: 12px; 
+                background: #161925; 
+                margin: 8px 0; 
+                border-radius: 6px; 
+                border: 1px solid #1e2235;
+            }}
+            .giveaway-prize {{ font-weight: 600; color: #fff; }}
+            .giveaway-info {{ font-size: 0.9em; color: #94a3b8; margin-top: 4px; }}
             
             #automod-tab, #giveaway-tab, #premium-tab, #leveling-tab {{ display: none; }}
             #automod-tab.active, #giveaway-tab.active, #premium-tab.active, #leveling-tab.active {{ display: block; }}
         </style>
     </head>
     <body>
-        <div class="navbar">
-            <h1>Spectra Dashboard - {guild['name']}</h1>
-            <div>
-                <a href="{url_for('dashboard')}">← Back to Dashboard</a>
-                <a href="{url_for('logout')}">Logout</a>
+        <div class="nav">
+            <h2>Spectra - {guild['name']}</h2>
+            <div class="nav-user">
+                <a href="{url_for('dashboard')}" class="nav-link">← Back to Dashboard</a>
+                <a href="{url_for('logout')}" class="nav-link">Sign Out</a>
             </div>
         </div>
         
@@ -873,11 +985,13 @@ def guild_settings(guild_id):
                     <h2>🛡️ AutoMod Configuration</h2>
                     <div class="section">
                         <h3>Blocked Words</h3>
-                        <p>Add words or phrases to auto-block in this server.</p>
+                        <p>Add words or phrases that should be automatically blocked in this server.</p>
                         <div class="form-group">
                             <label>Add Word or Phrase</label>
-                            <input type="text" id="newWord" placeholder="Enter word to block...">
-                            <button class="btn" onclick="addBlockedWord('{guild_id}')">Add Word</button>
+                            <div style="display: flex; gap: 10px;">
+                                <input type="text" id="newWord" placeholder="Enter word to block..." style="flex: 1;">
+                                <button class="btn" onclick="addBlockedWord('{guild_id}')">Add</button>
+                            </div>
                         </div>
                         <div class="word-list" id="wordList"></div>
                     </div>
@@ -885,14 +999,32 @@ def guild_settings(guild_id):
                 
                 <!-- Giveaway Tab -->
                 <div id="giveaway-tab">
-                    <h2>🎁 Giveaway Settings</h2>
+                    <h2>🎁 Giveaway Manager</h2>
                     <div class="section">
-                        <h3>Configure Giveaways</h3>
-                        <p>Use <code>/giveaway_start</code> command in Discord to create giveaways.</p>
+                        <h3>Create Guild Giveaway</h3>
+                        <p>Create and manage giveaways for this specific guild.</p>
+                        <div class="status" id="giveawayStatus"></div>
                         <div class="form-group">
-                            <label>Default Winner Count</label>
-                            <input type="number" id="defaultWinners" value="1" min="1">
-                            <button class="btn" onclick="saveGiveawaySettings('{guild_id}')">Save</button>
+                            <label>Prize</label>
+                            <input type="text" id="giveawayPrize" placeholder="e.g., $50 Gift Card, Nitro Boost">
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group" style="flex: 1;">
+                                <label>Duration (Minutes)</label>
+                                <input type="number" id="giveawayDuration" value="60" min="1">
+                            </div>
+                            <div class="form-group" style="flex: 1;">
+                                <label>Number of Winners</label>
+                                <input type="number" id="giveawayWinners" value="1" min="1">
+                            </div>
+                        </div>
+                        <button class="btn" onclick="createGuildGiveaway('{guild_id}')">Start Giveaway</button>
+                    </div>
+                    
+                    <div class="section">
+                        <h3>Active Giveaways</h3>
+                        <div class="giveaway-list" id="giveawayList">
+                            <p style="color: #94a3b8; text-align: center; padding: 20px;">No active giveaways</p>
                         </div>
                     </div>
                 </div>
@@ -903,8 +1035,8 @@ def guild_settings(guild_id):
                     <div class="section">
                         <h3>Current Status</h3>
                         {'<span class="premium-badge">✨ ' + premium_type + ' Premium Active ✨</span>' if is_premium else '<span class="premium-badge" style="background: #72767d;">Standard Access</span>'}
-                        <p>Server ID: <code>{guild_id}</code></p>
-                        <p>Use <code>/license_activate</code> command in Discord to activate a premium license.</p>
+                        <p style="margin-top: 15px;">Server ID: <code>{guild_id}</code></p>
+                        <p>Use the <code>/license_activate</code> command in Discord to activate a premium license.</p>
                     </div>
                 </div>
                 
@@ -915,15 +1047,18 @@ def guild_settings(guild_id):
                         <h3>Leveling Configuration</h3>
                         <p>Customize how users earn XP in your server.</p>
                         <div class="form-group">
-                            <label>XP per Message (15-25 default)</label>
-                            <input type="number" id="xpMin" value="15" min="1"> - <input type="number" id="xpMax" value="25" min="1">
-                            <button class="btn" onclick="saveLevelingSettings('{guild_id}')">Save</button>
+                            <label>XP per Message</label>
+                            <div class="form-row">
+                                <input type="number" id="xpMin" value="15" min="1"> 
+                                <span style="padding: 10px; color: #94a3b8;">to</span>
+                                <input type="number" id="xpMax" value="25" min="1">
+                            </div>
                         </div>
                         <div class="form-group">
-                            <label>XP Needed per Level (100 default)</label>
+                            <label>XP Needed per Level</label>
                             <input type="number" id="xpPerLevel" value="100" min="1">
-                            <button class="btn" onclick="saveLevelingSettings('{guild_id}')">Save</button>
                         </div>
+                        <button class="btn" onclick="saveLevelingSettings('{guild_id}')">Save Settings</button>
                     </div>
                 </div>
             </div>
@@ -938,6 +1073,11 @@ def guild_settings(guild_id):
                 // Show selected tab
                 document.getElementById(tabName + '-tab').classList.add('active');
                 event.target.closest('.sidebar-item').classList.add('active');
+                
+                // Load giveaways when switching to that tab
+                if (tabName === 'giveaway') {{
+                    loadGuildGiveaways('{guild_id}');
+                }}
             }}
             
             function addBlockedWord(guildId) {{
@@ -978,23 +1118,83 @@ def guild_settings(guild_id):
                 .then(data => {{
                     const list = document.getElementById('wordList');
                     list.innerHTML = '';
-                    data.words.forEach(word => {{
-                        const item = document.createElement('div');
-                        item.className = 'word-list-item';
-                        item.innerHTML = `<span>${{word}}</span><button onclick="removeBlockedWord('{guild_id}', '${{word}}')"">Remove</button>`;
-                        list.appendChild(item);
-                    }});
+                    if (data.words.length === 0) {{
+                        list.innerHTML = '<p style="color: #94a3b8; text-align: center; padding: 20px;">No blocked words yet</p>';
+                    }} else {{
+                        data.words.forEach(word => {{
+                            const item = document.createElement('div');
+                            item.className = 'word-list-item';
+                            item.innerHTML = `<span>${{word}}</span><button class="btn-small" onclick="removeBlockedWord('{guild_id}', '${{word}}')">Remove</button>`;
+                            list.appendChild(item);
+                        }});
+                    }}
                 }});
             }}
             
-            function saveGiveawaySettings(guildId) {{
-                const winners = document.getElementById('defaultWinners').value;
-                fetch(`/api/guild/${{guildId}}/giveaway/settings`, {{
+            function createGuildGiveaway(guildId) {{
+                const prize = document.getElementById('giveawayPrize').value.trim();
+                const duration = parseInt(document.getElementById('giveawayDuration').value);
+                const winners = parseInt(document.getElementById('giveawayWinners').value);
+                
+                const statusEl = document.getElementById('giveawayStatus');
+                
+                if (!prize) {{
+                    statusEl.className = 'status show error';
+                    statusEl.textContent = 'Please enter a prize';
+                    return;
+                }}
+                
+                statusEl.className = '';
+                
+                fetch(`/api/guild/${{guildId}}/giveaway/create`, {{
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
-                    body: JSON.stringify({{defaultWinners: winners}})
+                    body: JSON.stringify({{
+                        prize: prize,
+                        duration_minutes: duration,
+                        winner_count: winners
+                    }})
                 }})
-                .then(() => alert('Giveaway settings saved!'));
+                .then(r => r.json())
+                .then(data => {{
+                    if (data.success) {{
+                        statusEl.className = 'status show success';
+                        statusEl.textContent = 'Giveaway created successfully!';
+                        document.getElementById('giveawayPrize').value = '';
+                        document.getElementById('giveawayDuration').value = '60';
+                        document.getElementById('giveawayWinners').value = '1';
+                        setTimeout(() => loadGuildGiveaways(guildId), 1000);
+                    }} else {{
+                        statusEl.className = 'status show error';
+                        statusEl.textContent = 'Error: ' + data.error;
+                    }}
+                }})
+                .catch(err => {{
+                    statusEl.className = 'status show error';
+                    statusEl.textContent = 'Error: ' + err;
+                }});
+            }}
+            
+            function loadGuildGiveaways(guildId) {{
+                fetch(`/api/guild/${{guildId}}/giveaway/list`)
+                .then(r => r.json())
+                .then(data => {{
+                    const list = document.getElementById('giveawayList');
+                    list.innerHTML = '';
+                    if (data.giveaways.length === 0) {{
+                        list.innerHTML = '<p style="color: #94a3b8; text-align: center; padding: 20px;">No active giveaways</p>';
+                    }} else {{
+                        data.giveaways.forEach(ga => {{
+                            const item = document.createElement('div');
+                            item.className = 'giveaway-item';
+                            item.innerHTML = `
+                                <div class="giveaway-prize">${{ga.prize}}</div>
+                                <div class="giveaway-info">👥 ${{ga.winner_count}} winner(s) • 📝 ${{ga.entries}} entries • ⏱️ ${{ga.time_left}}</div>
+                            `;
+                            list.appendChild(item);
+                        }});
+                    }}
+                }});
             }}
             
             function saveLevelingSettings(guildId) {{
@@ -1082,6 +1282,85 @@ def save_giveaway_settings(guild_id):
     config['giveaway']['default_winners'] = int(data.get('defaultWinners', 1))
     save_guild_config(guild_id, config)
     return jsonify({'success': True})
+
+@app.route('/api/guild/<guild_id>/giveaway/create', methods=['POST'])
+@require_login
+def create_guild_giveaway(guild_id):
+    """Create a giveaway for a specific guild."""
+    data = request.json
+    prize = data.get('prize', '').strip()
+    duration = int(data.get('duration_minutes', 60))
+    winners = int(data.get('winner_count', 1))
+    
+    if not prize or duration <= 0 or winners <= 0:
+        return jsonify({'success': False, 'error': 'Invalid giveaway data'}), 400
+    
+    # Verify user has admin access to this guild
+    user = get_discord_user()
+    guild = next((g for g in user.get('guilds', []) if g['id'] == guild_id), None)
+    if not guild:
+        return jsonify({'success': False, 'error': 'Guild not found'}), 404
+    
+    admin = guild.get('owner', False) or (guild.get('permissions') & 0x8)
+    if not admin:
+        return jsonify({'success': False, 'error': 'Insufficient permissions'}), 403
+    
+    # Create in Firestore with guild_id stored
+    if not DB:
+        return jsonify({'success': False, 'error': 'Database not available'}), 500
+    
+    try:
+        giveaway_id = str(uuid.uuid4())
+        end_time = time.time() + (duration * 60)
+        
+        giveaway_data = {
+            'prize': prize,
+            'duration_minutes': duration,
+            'winner_count': winners,
+            'channel_id': 0,
+            'guild_id': guild_id,
+            'host_id': int(user['id']),
+            'created_at': time.time(),
+            'end_time': end_time,
+            'entries': []
+        }
+        
+        DB.collection('giveaways').document(giveaway_id).set(giveaway_data)
+        return jsonify({'success': True})
+    except Exception as e:
+        print(f"Error creating guild giveaway: {e}")
+        return jsonify({'success': False, 'error': 'Failed to create giveaway'}), 500
+
+@app.route('/api/guild/<guild_id>/giveaway/list', methods=['GET'])
+@require_login
+def get_guild_giveaways(guild_id):
+    """Get active giveaways for a specific guild."""
+    if not DB:
+        return jsonify({'giveaways': []})
+    
+    try:
+        docs = DB.collection('giveaways').where('guild_id', '==', guild_id).stream()
+        giveaways = []
+        for doc in docs:
+            ga = doc.to_dict()
+            end_time = ga.get('end_time', 0)
+            time_left = max(0, end_time - time.time())
+            
+            if time_left > 0:  # Only include active giveaways
+                hours_left = int(time_left / 3600)
+                minutes_left = int((time_left % 3600) / 60)
+                
+                giveaways.append({
+                    'prize': ga.get('prize', 'Unknown'),
+                    'winner_count': ga.get('winner_count', 1),
+                    'entries': len(ga.get('entries', [])),
+                    'time_left': f"{hours_left}h {minutes_left}m"
+                })
+        
+        return jsonify({'giveaways': sorted(giveaways, key=lambda x: x['prize'])})
+    except Exception as e:
+        print(f"Error fetching guild giveaways: {e}")
+        return jsonify({'giveaways': []})
 
 # ==============================================================================
 # API Routes - Leveling

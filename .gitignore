@@ -1,2 +1,3 @@
 .env
 DASHBOARD_SETUP.md
+*.pyc
