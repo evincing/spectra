@@ -292,7 +292,7 @@ def logout():
     return redirect(url_for('home'))
 
 # ==============================================================================
-# ROUTES - Main Pages
+# ROUTES - Main Pages (STYLING UPDATED)
 # ==============================================================================
 
 @app.route('/')
@@ -308,30 +308,60 @@ def home():
         <title>Spectra Bot Dashboard</title>
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #fff; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-            .container { text-align: center; max-width: 600px; }
-            h1 { font-size: 3em; margin-bottom: 20px; color: #7289da; }
-            p { font-size: 1.2em; margin-bottom: 30px; color: #b9bbbe; }
-            .btn { display: inline-block; padding: 12px 30px; background-color: #7289da; color: white; text-decoration: none; border-radius: 4px; font-size: 1.1em; transition: all 0.3s; border: none; cursor: pointer; }
-            .btn:hover { background-color: #5a77c4; transform: scale(1.05); }
+            body { 
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+                background-color: #0f111a; 
+                color: #ffffff; 
+                min-height: 100vh; 
+                display: flex; 
+                align-items: center; 
+                justify-content: center; 
+                background-image: radial-gradient(circle at 50% -20%, #1c2339 0%, #0f111a 100%);
+            }
+            .container { text-align: center; max-width: 800px; padding: 40px; }
+            h1 { font-size: 3.5rem; font-weight: 800; margin-bottom: 16px; letter-spacing: -1px; }
+            .accent { color: #5865F2; }
+            p { font-size: 1.25rem; margin-bottom: 40px; color: #94a3b8; line-height: 1.6; }
+            .btn-group { display: flex; gap: 16px; justify-content: center; }
+            .btn { 
+                display: inline-flex; 
+                align-items: center; 
+                padding: 14px 28px; 
+                background-color: #5865F2; 
+                color: white; 
+                text-decoration: none; 
+                border-radius: 8px; 
+                font-size: 1rem; 
+                font-weight: 600; 
+                transition: all 0.2s ease; 
+                border: none; 
+                cursor: pointer; 
+            }
+            .btn:hover { background-color: #4752c4; transform: translateY(-2px); box-shadow: 0 4px 20px rgba(88, 101, 242, 0.4); }
+            .btn-secondary { background-color: #2b2d31; color: #ffffff; }
+            .btn-secondary:hover { background-color: #3b3e44; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3); }
+            .btn-danger { background-color: #da373c; }
+            .btn-danger:hover { background-color: #a12829; }
         </style>
     </head>
     <body>
         <div class="container">
-            <h1>✨ Spectra Bot Dashboard</h1>
-            <p>Manage your server's Spectra bot settings</p>
+            <h1><span class="accent">Spectra</span> Bot</h1>
+            <p>The next generation of server management. Fast, reliable, and completely customizable via your own personal dashboard.</p>
+            <div class="btn-group">
             """
     if user:
         html += f"""
-            <p>Welcome, {user['username']}!</p>
-            <a href="{url_for('dashboard')}" class="btn">Go to Dashboard</a>
-            <a href="{url_for('logout')}" class="btn" style="background-color: #f04747; margin-left: 10px;">Logout</a>
+                <a href="{url_for('dashboard')}" class="btn">Dashboard</a>
+                <a href="{url_for('logout')}" class="btn btn-danger">Logout</a>
             """
     else:
         html += f"""
-            <a href="{url_for('login')}" class="btn">Login with Discord</a>
+                <a href="{url_for('login')}" class="btn">Login with Discord</a>
+                <a href="#" class="btn btn-secondary">Invite Bot</a>
             """
     html += """
+            </div>
         </div>
     </body>
     </html>
@@ -350,23 +380,31 @@ def dashboard():
     for guild in guilds:
         guild_id = guild['id']
         guild_name = guild['name']
-        guild_icon = guild.get('icon')
         admin = guild.get('owner', False)
         
-        if admin or (guild.get('permissions') & 0x8):  # Check for admin permission
+        if admin or (guild.get('permissions') & 0x8):
             guild_cards += f"""
             <a href="{url_for('guild_settings', guild_id=guild_id)}" class="guild-card">
-                <div class="guild-icon">{'👑' if admin else '⚙️'}</div>
-                <div class="guild-name">{guild_name}</div>
+                <div class="guild-avatar">
+                    <span>{guild_name[0].upper()}</span>
+                </div>
+                <div class="guild-info">
+                    <div class="guild-name">{guild_name}</div>
+                    <div class="guild-role">{'Server Owner' if admin else 'Administrator'}</div>
+                </div>
+                <div class="guild-arrow">→</div>
             </a>
             """
     
     owner_section = ""
     if is_owner:
         owner_section = f"""
-        <div class="owner-alert">
-            <span>👑 Owner Mode</span>
-            <a href="{url_for('owner_panel')}" class="btn-owner">Owner Panel</a>
+        <div class="owner-panel">
+            <div class="owner-text">
+                <strong>System Administrator</strong>
+                <p>Global management tools enabled.</p>
+            </div>
+            <a href="{url_for('owner_panel')}" class="btn-owner">Open Panel</a>
         </div>
         """
     
@@ -376,39 +414,85 @@ def dashboard():
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Dashboard - Spectra Bot</title>
+        <title>Dashboard | Spectra</title>
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%); color: #dcddde; min-height: 100vh; }
-            .navbar { background: rgba(45, 45, 68, 0.95); backdrop-filter: blur(10px); padding: 15px 30px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(114, 137, 218, 0.2); }
-            .navbar h1 { color: #7289da; font-size: 1.8em; font-weight: 700; }
-            .navbar-right { display: flex; align-items: center; gap: 20px; }
-            .navbar a { color: #b9bbbe; text-decoration: none; transition: color 0.3s; font-size: 0.95em; }
-            .navbar a:hover { color: #7289da; }
-            .container { max-width: 1400px; margin: 40px auto; padding: 0 20px; }
-            h2 { color: #7289da; margin-bottom: 30px; font-size: 2em; font-weight: 700; }
-            .owner-alert { background: linear-gradient(135deg, #f47fff 0%, #7289da 100%); padding: 15px 20px; border-radius: 8px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 15px rgba(244, 127, 255, 0.3); }
-            .owner-alert span { font-weight: 600; font-size: 1.1em; }
-            .btn-owner { background: white; color: #7289da; padding: 8px 16px; border-radius: 4px; text-decoration: none; font-weight: 600; transition: all 0.3s; }
-            .btn-owner:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-            .guilds-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
-            .guild-card { background: linear-gradient(135deg, #2f3136 0%, #2c2f33 100%); padding: 20px; border-radius: 12px; text-align: center; text-decoration: none; color: #dcddde; transition: all 0.3s; border: 2px solid transparent; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-            .guild-card:hover { background: linear-gradient(135deg, #3b3e44 0%, #383b42 100%); border-color: #7289da; transform: translateY(-8px); box-shadow: 0 8px 24px rgba(114, 137, 218, 0.2); }
-            .guild-icon { font-size: 3em; margin-bottom: 10px; }
-            .guild-name { font-size: 1.05em; font-weight: 600; }
+            body { 
+                font-family: 'Inter', sans-serif; 
+                background-color: #0f111a; 
+                color: #dcddde; 
+                min-height: 100vh; 
+            }
+            .nav { 
+                padding: 20px 40px; 
+                display: flex; 
+                justify-content: space-between; 
+                align-items: center; 
+                background: #11131e;
+                border-bottom: 1px solid #1e2235;
+            }
+            .nav h2 { font-size: 1.5rem; color: #fff; font-weight: 700; }
+            .nav-user { display: flex; align-items: center; gap: 15px; }
+            .logout-link { color: #94a3b8; text-decoration: none; font-size: 0.9rem; }
+            .logout-link:hover { color: #fff; }
+
+            .container { max-width: 1100px; margin: 60px auto; padding: 0 20px; }
+            .header-area { margin-bottom: 40px; }
+            .header-area h1 { font-size: 2.2rem; color: #fff; margin-bottom: 10px; }
+            .header-area p { color: #94a3b8; }
+
+            .owner-panel { 
+                background: linear-gradient(90deg, #5865F2, #7289da); 
+                padding: 20px; 
+                border-radius: 12px; 
+                margin-bottom: 40px; 
+                display: flex; 
+                justify-content: space-between; 
+                align-items: center;
+                color: white;
+            }
+            .btn-owner { background: white; color: #5865F2; padding: 10px 20px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 0.9rem; }
+
+            .guilds-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+            .guild-card { 
+                background: #161925; 
+                border: 1px solid #1e2235;
+                padding: 24px; 
+                border-radius: 12px; 
+                display: flex; 
+                align-items: center; 
+                text-decoration: none; 
+                color: inherit; 
+                transition: all 0.2s ease;
+            }
+            .guild-card:hover { border-color: #5865F2; background: #1c2030; transform: translateY(-2px); }
+            .guild-avatar { 
+                width: 60px; height: 60px; background: #2b2d31; border-radius: 16px; 
+                display: flex; align-items: center; justify-content: center; 
+                font-size: 1.5rem; font-weight: bold; color: #5865F2; margin-right: 20px;
+            }
+            .guild-info { flex: 1; }
+            .guild-name { font-size: 1.1rem; font-weight: 600; color: #fff; margin-bottom: 4px; }
+            .guild-role { font-size: 0.85rem; color: #94a3b8; }
+            .guild-arrow { color: #3f4461; font-size: 1.2rem; }
+
+            @media (max-width: 768px) { .guilds-grid { grid-template-columns: 1fr; } }
         </style>
     </head>
     <body>
-        <div class="navbar">
-            <h1>✨ Spectra Dashboard</h1>
-            <div class="navbar-right">
-                <span>Welcome, """ + user['username'] + """</span>
-                <a href=\"""" + url_for('logout') + """\">Logout</a>
+        <div class="nav">
+            <h2>Spectra</h2>
+            <div class="nav-user">
+                <span>""" + user['username'] + """</span>
+                <a href=\"""" + url_for('logout') + """\" class="logout-link">Sign Out</a>
             </div>
         </div>
         <div class="container">
             """ + owner_section + """
-            <h2>Select a Server</h2>
+            <div class="header-area">
+                <h1>Select a Server</h1>
+                <p>Choose the server you want to configure and manage.</p>
+            </div>
             <div class="guilds-grid">
                 """ + guild_cards + """
             </div>
