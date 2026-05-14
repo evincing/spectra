@@ -357,6 +357,7 @@ def home():
     if user:
         html += f"""
                 <a href="{url_for('dashboard')}" class="btn">Dashboard</a>
+                <a href="{url_for('premium')}" class="btn btn-secondary">Premium</a>
                 <a href="{url_for('logout')}" class="btn btn-danger">Logout</a>
             """
     else:
@@ -367,9 +368,505 @@ def home():
                     </svg>
                     Login with Discord
                 </a>
+                <a href="{url_for('premium')}" class="btn btn-secondary">Premium</a>
                 <a href="{invite_bot_url}" class="btn btn-secondary">Invite Bot</a>
             """
     html += """
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return html
+
+@app.route('/premium')
+def premium():
+    """Premium features page."""
+    user = get_discord_user()
+    
+    html = """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Spectra Premium - Unlock More</title>
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+                font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+                background-color: #0f111a; 
+                color: #ffffff; 
+                min-height: 100vh;
+                background-image: radial-gradient(circle at 50% -20%, #1c2339 0%, #0f111a 100%);
+            }
+            
+            header {
+                background: linear-gradient(135deg, #5865F2 0%, #4752c4 100%);
+                padding: 40px 20px;
+                text-align: center;
+                border-bottom: 1px solid rgba(88, 101, 242, 0.3);
+            }
+            
+            header h1 { font-size: 2.5rem; font-weight: 800; margin-bottom: 10px; }
+            header p { font-size: 1.1rem; color: rgba(255, 255, 255, 0.9); }
+            
+            nav {
+                display: flex;
+                justify-content: center;
+                gap: 20px;
+                padding: 20px;
+                background-color: #1a1d27;
+                border-bottom: 1px solid #2b2d31;
+            }
+            
+            nav a {
+                color: #94a3b8;
+                text-decoration: none;
+                font-weight: 600;
+                transition: color 0.2s;
+            }
+            
+            nav a:hover { color: #5865F2; }
+            
+            .container { max-width: 1200px; margin: 0 auto; padding: 60px 20px; }
+            
+            .hero {
+                text-align: center;
+                margin-bottom: 80px;
+            }
+            
+            .hero h2 { font-size: 2.5rem; margin-bottom: 16px; }
+            .hero p { font-size: 1.25rem; color: #94a3b8; margin-bottom: 32px; }
+            
+            .features-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+                gap: 24px;
+                margin-bottom: 60px;
+            }
+            
+            .feature-card {
+                background: linear-gradient(135deg, #1a1d27 0%, #141820 100%);
+                border: 1px solid #2b2d31;
+                border-radius: 12px;
+                padding: 32px;
+                transition: all 0.3s ease;
+                cursor: pointer;
+            }
+            
+            .feature-card:hover {
+                border-color: #5865F2;
+                transform: translateY(-4px);
+                box-shadow: 0 12px 24px rgba(88, 101, 242, 0.15);
+            }
+            
+            .feature-icon {
+                font-size: 2.5rem;
+                margin-bottom: 16px;
+            }
+            
+            .feature-card h3 {
+                font-size: 1.5rem;
+                margin-bottom: 12px;
+            }
+            
+            .feature-card p {
+                color: #94a3b8;
+                line-height: 1.6;
+                margin-bottom: 16px;
+            }
+            
+            .feature-list {
+                list-style: none;
+                padding-left: 0;
+            }
+            
+            .feature-list li {
+                padding: 8px 0;
+                color: #cbd5e1;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            
+            .feature-list li:before {
+                content: "✓";
+                color: #5865F2;
+                font-weight: bold;
+                font-size: 1.2rem;
+            }
+            
+            .category-title {
+                font-size: 2rem;
+                font-weight: 700;
+                margin-top: 60px;
+                margin-bottom: 30px;
+                color: #e2e8f0;
+                padding-bottom: 12px;
+                border-bottom: 2px solid #5865F2;
+                display: inline-block;
+            }
+            
+            .comparison-section {
+                margin-top: 80px;
+                padding: 40px;
+                background: linear-gradient(135deg, #1a1d27 0%, #141820 100%);
+                border: 1px solid #2b2d31;
+                border-radius: 12px;
+            }
+            
+            .comparison-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 40px;
+                margin-top: 30px;
+            }
+            
+            .comparison-box h4 {
+                font-size: 1.3rem;
+                margin-bottom: 20px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            
+            .comparison-box ul {
+                list-style: none;
+            }
+            
+            .comparison-box li {
+                padding: 10px 0;
+                border-bottom: 1px solid #2b2d31;
+                color: #cbd5e1;
+            }
+            
+            .btn-group {
+                display: flex;
+                gap: 16px;
+                justify-content: center;
+                flex-wrap: wrap;
+                margin-top: 40px;
+            }
+            
+            .btn {
+                display: inline-flex;
+                align-items: center;
+                gap: 10px;
+                padding: 14px 28px;
+                background-color: #5865F2;
+                color: white;
+                text-decoration: none;
+                border-radius: 8px;
+                font-size: 1rem;
+                font-weight: 600;
+                transition: all 0.2s ease;
+                border: none;
+                cursor: pointer;
+            }
+            
+            .btn:hover {
+                background-color: #4752c4;
+                transform: translateY(-2px);
+                box-shadow: 0 4px 20px rgba(88, 101, 242, 0.4);
+            }
+            
+            .btn-secondary {
+                background-color: #2b2d31;
+                color: #ffffff;
+            }
+            
+            .btn-secondary:hover {
+                background-color: #3b3e44;
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            }
+            
+            @media (max-width: 768px) {
+                header h1 { font-size: 1.8rem; }
+                .hero h2 { font-size: 1.8rem; }
+                .comparison-grid { grid-template-columns: 1fr; gap: 20px; }
+                nav { flex-wrap: wrap; gap: 10px; }
+            }
+        </style>
+    </head>
+    <body>
+        <header>
+            <h1>✨ Spectra Premium</h1>
+            <p>Unlock powerful features to take your server to the next level</p>
+        </header>
+        
+        <nav>
+            <a href="/">← Back to Home</a>
+            """
+    if user:
+        html += f'<a href="{url_for("dashboard")}">Dashboard</a>'
+    html += """
+        </nav>
+        
+        <div class="container">
+            <div class="hero">
+                <h2>Level Up Your Server</h2>
+                <p>Premium membership grants access to exclusive features designed to enhance your server's capabilities.</p>
+            </div>
+            
+            <!-- Giveaways Section -->
+            <div class="category-title">🎁 Advanced Giveaways</div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>Unlimited Giveaways</h3>
+                    <p>Run as many simultaneous giveaways as you need without restrictions.</p>
+                    <ul class="feature-list">
+                        <li>No giveaway limits</li>
+                        <li>Run concurrent events</li>
+                        <li>Schedule future giveaways</li>
+                    </ul>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🎯</div>
+                    <h3>Advanced Filtering</h3>
+                    <p>Target specific members for more meaningful giveaways.</p>
+                    <ul class="feature-list">
+                        <li>Filter by roles</li>
+                        <li>Minimum account age requirement</li>
+                        <li>Exclude specific members</li>
+                    </ul>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">📈</div>
+                    <h3>Giveaway Analytics</h3>
+                    <p>Track and analyze giveaway performance with detailed insights.</p>
+                    <ul class="feature-list">
+                        <li>Participation history</li>
+                        <li>Winner statistics</li>
+                        <li>Engagement metrics</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Leveling Section -->
+            <div class="category-title">⭐ Enhanced Leveling</div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🚀</div>
+                    <h3>XP Multipliers</h3>
+                    <p>Customize XP rates and apply role-based multipliers.</p>
+                    <ul class="feature-list">
+                        <li>Global XP multipliers</li>
+                        <li>Role-specific multipliers</li>
+                        <li>Time-based boost events</li>
+                    </ul>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🏆</div>
+                    <h3>Custom Level Rewards</h3>
+                    <p>Assign custom rewards at specific levels.</p>
+                    <ul class="feature-list">
+                        <li>Auto-assign roles</li>
+                        <li>Custom badges</li>
+                        <li>Prize pools</li>
+                    </ul>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>Prestige System</h3>
+                    <p>Let members reset and advance with prestige levels.</p>
+                    <ul class="feature-list">
+                        <li>Prestige ranks</li>
+                        <li>Exclusive prestige rewards</li>
+                        <li>Leaderboard tracking</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Moderation Section -->
+            <div class="category-title">🛡️ Advanced Moderation</div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🚨</div>
+                    <h3>Smart Automod</h3>
+                    <p>Intelligent automatic moderation with customizable triggers.</p>
+                    <ul class="feature-list">
+                        <li>Regex pattern matching</li>
+                        <li>Custom word lists</li>
+                        <li>Spam detection</li>
+                    </ul>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🔐</div>
+                    <h3>Raid Protection</h3>
+                    <p>Automatically detect and protect against raids.</p>
+                    <ul class="feature-list">
+                        <li>Member join threshold alerts</li>
+                        <li>Auto-lockdown mode</li>
+                        <li>Suspicious activity logs</li>
+                    </ul>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">📜</div>
+                    <h3>Advanced Logging</h3>
+                    <p>Comprehensive moderation logs with custom filtering.</p>
+                    <ul class="feature-list">
+                        <li>Detailed action logs</li>
+                        <li>Custom log channels</li>
+                        <li>Searchable history</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Customization Section -->
+            <div class="category-title">🎨 Customization & Branding</div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🎭</div>
+                    <h3>Custom Messages</h3>
+                    <p>Fully customize bot responses and embeds.</p>
+                    <ul class="feature-list">
+                        <li>Custom welcome messages</li>
+                        <li>Branded embeds</li>
+                        <li>Custom command responses</li>
+                    </ul>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🌈</div>
+                    <h3>Theme Customization</h3>
+                    <p>Personalize the look and feel of bot interactions.</p>
+                    <ul class="feature-list">
+                        <li>Custom embed colors</li>
+                        <li>Logo customization</li>
+                        <li>Branded dashboard</li>
+                    </ul>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">⚙️</div>
+                    <h3>Advanced Settings</h3>
+                    <p>Fine-tune every aspect of bot behavior.</p>
+                    <ul class="feature-list">
+                        <li>Module toggles</li>
+                        <li>Per-channel settings</li>
+                        <li>Advanced permissions</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Analytics Section -->
+            <div class="category-title">📊 Analytics & Insights</div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">📈</div>
+                    <h3>Server Analytics</h3>
+                    <p>Comprehensive server statistics and insights.</p>
+                    <ul class="feature-list">
+                        <li>Member growth trends</li>
+                        <li>Activity heatmaps</li>
+                        <li>Demographic data</li>
+                    </ul>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🔗</div>
+                    <h3>API Access</h3>
+                    <p>Programmatic access to bot data and functions.</p>
+                    <ul class="feature-list">
+                        <li>RESTful API</li>
+                        <li>Webhooks support</li>
+                        <li>Custom integrations</li>
+                    </ul>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">📋</div>
+                    <h3>Custom Reports</h3>
+                    <p>Generate detailed reports on server activity.</p>
+                    <ul class="feature-list">
+                        <li>Scheduled reports</li>
+                        <li>Export data (CSV/JSON)</li>
+                        <li>Custom metrics</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Support Section -->
+            <div class="category-title">💬 Premium Support</div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Priority Support</h3>
+                    <p>Get faster response times from our support team.</p>
+                    <ul class="feature-list">
+                        <li>24/7 support response</li>
+                        <li>Dedicated support channel</li>
+                        <li>Direct access to team</li>
+                    </ul>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">🎓</div>
+                    <h3>Setup Assistance</h3>
+                    <p>Get personalized help setting up your premium features.</p>
+                    <ul class="feature-list">
+                        <li>Configuration help</li>
+                        <li>Best practices guide</li>
+                        <li>Optimization tips</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Comparison Section -->
+            <div class="comparison-section">
+                <h2 style="text-align: center; margin-bottom: 10px;">Free vs Premium</h2>
+                <p style="text-align: center; color: #94a3b8; margin-bottom: 30px;">Compare features and see what Premium offers</p>
+                
+                <div class="comparison-grid">
+                    <div class="comparison-box">
+                        <h4>📱 Free Plan</h4>
+                        <ul>
+                            <li>✓ Basic giveaways (limited)</li>
+                            <li>✓ Basic leveling system</li>
+                            <li>✓ Standard automod</li>
+                            <li>✓ Basic dashboard</li>
+                            <li>✓ Community support</li>
+                            <li>✗ No XP multipliers</li>
+                            <li>✗ No advanced analytics</li>
+                            <li>✗ No API access</li>
+                        </ul>
+                    </div>
+                    
+                    <div class="comparison-box">
+                        <h4 style="color: #5865F2;">✨ Premium Plan</h4>
+                        <ul>
+                            <li>✓ Unlimited giveaways</li>
+                            <li>✓ Advanced leveling with multipliers</li>
+                            <li>✓ Smart automod with regex</li>
+                            <li>✓ Advanced dashboard</li>
+                            <li>✓ Priority support 24/7</li>
+                            <li>✓ XP multipliers & prestige</li>
+                            <li>✓ Complete analytics suite</li>
+                            <li>✓ Full API access</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- CTA -->
+            <div style="text-align: center; margin-top: 60px;">
+                <h2 style="margin-bottom: 20px;">Ready to go Premium?</h2>
+                <p style="color: #94a3b8; margin-bottom: 30px; font-size: 1.1rem;">Coming soon! Pricing details will be announced shortly.</p>
+                <div class="btn-group">
+                    <a href="/" class="btn">Back to Home</a>
+                    """
+    if user:
+        html += f'<a href="{url_for("dashboard")}" class="btn btn-secondary">Dashboard</a>'
+    html += """
+                </div>
             </div>
         </div>
     </body>
@@ -418,7 +915,7 @@ def dashboard():
         owner_section = f"""
         <div class="owner-panel">
             <div class="owner-text">
-                <strong>System Administrator</strong>
+                <strong>Spectra Administrator</strong>
                 <p>Global management tools enabled.</p>
             </div>
             <a href="{url_for('owner_panel')}" class="btn-owner">Open Panel</a>
