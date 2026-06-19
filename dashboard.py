@@ -369,6 +369,7 @@ def home():
                     Login with Discord
                 </a>
                 <a href="{url_for('premium')}" class="btn btn-secondary">Premium</a>
+                <a href="{url_for('status')}" class="btn btn-secondary">Status</a>
                 <a href="{invite_bot_url}" class="btn btn-secondary">Invite Bot</a>
             """
     html += """
@@ -2418,8 +2419,18 @@ def api_status():
 def api_status_guild(guild_id):
     """Search for a guild and return its cluster information (public endpoint)."""
     try:
+        # Convert guild_id to int for comparison (URL params come as strings)
+        try:
+            guild_id_int = int(guild_id)
+        except ValueError:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid guild ID',
+                'message': 'Guild ID must be a valid number'
+            }), 400
+        
         # Check if guild is in our config
-        if guild_id not in config:
+        if guild_id_int not in config:
             return jsonify({
                 'success': False,
                 'error': 'Guild not found',
@@ -2427,11 +2438,10 @@ def api_status_guild(guild_id):
             }), 404
         
         # Get shard/cluster assignment
-        shard_info = calculate_shard_for_guild(guild_id)
+        shard_info = calculate_shard_for_guild(guild_id_int)
         
         # Load guild name from guild cache
         guild_cache = load_guild_cache()
-        guild_id_int = int(guild_id)
         guild_name = guild_cache.get(guild_id_int, f"Guild {guild_id}")
         
         return jsonify({
