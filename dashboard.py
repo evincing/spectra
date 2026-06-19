@@ -2344,24 +2344,25 @@ def save_leveling_settings(guild_id):
 # Helper Functions - Status & Cluster Management
 # ==============================================================================
 
-def get_cluster_info():
-    """Get current cluster/shard information.
-    
-    Returns:
-        dict: Cluster information including cluster ID, shards, guilds, and status
-    
-    For future: This can be extended to support multiple clusters by:
-    - Reading from config.json: cluster_config = config.get('cluster_config', {})
-    - Returning multiple cluster objects based on shard distribution
-    """
-    # Currently single cluster setup
+def get_cluster_info(bot_token):
+    """Get current cluster/shard information by fetching bot's guilds."""
+    headers = {'Authorization': f'Bot {bot_token}'}
+    try:
+        r = requests.get('https://discord.com/api/v10/users/@me/guilds', headers=headers)
+        r.raise_for_status()
+        guilds = r.json()
+        guild_count = len(guilds)
+    except Exception as e:
+        print(f"Warning: Could not fetch guild count for status page. Error: {e}")
+        guild_count = 0
+
     cluster_info = {
         'id': 0,
         'name': 'Default Cluster',
         'status': 'online',
         'shard_ids': [0],
         'shard_count': 1,
-        'guild_count': len(config)  # Number of configured guilds
+        'guild_count': guild_count
     }
     return cluster_info
 
@@ -2400,12 +2401,16 @@ def calculate_shard_for_guild(guild_id):
 @app.route('/api/status')
 def api_status():
     """Get all cluster and shard information (public endpoint)."""
+    bot_token = os.environ.get('DISCORD_TOKEN')
+    if not bot_token:
+        return jsonify({'success': False, 'error': 'Bot token not configured on server'}), 500
+        
     try:
-        cluster = get_cluster_info()
+        cluster = get_cluster_info(bot_token)
         return jsonify({
             'success': True,
             'clusters': [cluster],
-            'total_shards': sum(c['shard_count'] for c in [cluster]),
+            'total_shards': cluster['shard_count'],
             'total_guilds': cluster['guild_count'],
             'timestamp': datetime.now(timezone.utc).isoformat()
         })
@@ -2414,35 +2419,31 @@ def api_status():
             'success': False,
             'error': str(e)
         }), 500
-
 @app.route('/api/status/guild/<guild_id>')
 def api_status_guild(guild_id):
     """Search for a guild and return its cluster information (public endpoint)."""
+    bot_token = os.environ.get('DISCORD_TOKEN')
+    if not bot_token:
+        return jsonify({'success': False, 'error': 'Bot token not configured on server'}), 500
+
     try:
-        # Convert guild_id to int for comparison (URL params come as strings)
-        try:
-            guild_id_int = int(guild_id)
-        except ValueError:
-            return jsonify({
-                'success': False,
-                'error': 'Invalid guild ID',
-                'message': 'Guild ID must be a valid number'
-            }), 400
+        guild_id_int = int(guild_id)
+    except ValueError:
+        return jsonify({'success': False, 'error': 'Invalid guild ID format'}), 400
+
+    headers = {'Authorization': f'Bot {bot_token}'}
+    try:
+        # Check if the bot is in the guild by trying to fetch it
+        r = requests.get(f'https://discord.com/api/v10/guilds/{guild_id_int}', headers=headers)
         
-        # Check if guild is in our config
-        if guild_id_int not in config:
-            return jsonify({
-                'success': False,
-                'error': 'Guild not found',
-                'message': 'The bot is not in this server or it has not been configured.'
-            }), 404
+        if r.status_code == 404:
+            return jsonify({'success': False, 'error': 'Guild not found or bot is not a member'}), 404
         
-        # Get shard/cluster assignment
+        r.raise_for_status()
+        guild_data = r.json()
+        guild_name = guild_data.get('name', f"Guild {guild_id}")
+
         shard_info = calculate_shard_for_guild(guild_id_int)
-        
-        # Load guild name from guild cache
-        guild_cache = load_guild_cache()
-        guild_name = guild_cache.get(guild_id_int, f"Guild {guild_id}")
         
         return jsonify({
             'success': True,
@@ -2452,6 +2453,10 @@ def api_status_guild(guild_id):
             'shard_id': shard_info['shard_id'],
             'status': 'online'
         })
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 404:
+            return jsonify({'success': False, 'error': 'Guild not found or bot is not a member'}), 404
+        return jsonify({'success': False, 'error': f'Discord API error: {e.response.text}'}), 500
     except Exception as e:
         return jsonify({
             'success': False,
