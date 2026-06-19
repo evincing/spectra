@@ -874,6 +874,468 @@ def premium():
     """
     return html
 
+@app.route('/status')
+def status_page():
+    """Public status page showing bot clusters and shards."""
+    html = """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Spectra - Bot Status</title>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 20px;
+                color: #333;
+            }
+            
+            .container {
+                max-width: 1200px;
+                margin: 0 auto;
+            }
+            
+            header {
+                text-align: center;
+                color: white;
+                margin-bottom: 40px;
+            }
+            
+            h1 {
+                font-size: 2.5em;
+                margin-bottom: 10px;
+                text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+            }
+            
+            .subtitle {
+                font-size: 1.1em;
+                opacity: 0.9;
+                margin-bottom: 20px;
+            }
+            
+            .refresh-info {
+                font-size: 0.9em;
+                opacity: 0.8;
+            }
+            
+            .search-section {
+                background: white;
+                padding: 30px;
+                border-radius: 12px;
+                box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+                margin-bottom: 30px;
+            }
+            
+            .search-box {
+                display: flex;
+                gap: 10px;
+                margin-bottom: 20px;
+            }
+            
+            .search-box input {
+                flex: 1;
+                padding: 12px 15px;
+                border: 2px solid #e0e0e0;
+                border-radius: 8px;
+                font-size: 1em;
+                transition: border-color 0.3s;
+            }
+            
+            .search-box input:focus {
+                outline: none;
+                border-color: #667eea;
+            }
+            
+            .search-box button {
+                padding: 12px 30px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                border: none;
+                border-radius: 8px;
+                cursor: pointer;
+                font-weight: 600;
+                transition: transform 0.2s, box-shadow 0.2s;
+            }
+            
+            .search-box button:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+            }
+            
+            .search-box button:active {
+                transform: translateY(0);
+            }
+            
+            .search-results {
+                margin-top: 20px;
+                min-height: 40px;
+            }
+            
+            .guild-result {
+                background: #f5f5f5;
+                padding: 15px;
+                border-radius: 8px;
+                border-left: 4px solid #667eea;
+                margin-bottom: 10px;
+            }
+            
+            .guild-result.not-found {
+                border-left-color: #ff6b6b;
+                color: #d32f2f;
+            }
+            
+            .guild-result.found {
+                border-left-color: #4caf50;
+            }
+            
+            .guild-name {
+                font-weight: 600;
+                margin-bottom: 5px;
+            }
+            
+            .guild-cluster {
+                color: #666;
+                font-size: 0.95em;
+            }
+            
+            .cluster-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                gap: 20px;
+                margin-top: 20px;
+            }
+            
+            .cluster-card {
+                background: white;
+                border-radius: 12px;
+                padding: 25px;
+                box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+                transition: transform 0.3s, box-shadow 0.3s;
+            }
+            
+            .cluster-card:hover {
+                transform: translateY(-5px);
+                box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+            }
+            
+            .cluster-header {
+                display: flex;
+                align-items: center;
+                margin-bottom: 20px;
+                gap: 10px;
+            }
+            
+            .cluster-number {
+                font-size: 1.8em;
+                font-weight: 700;
+                color: #667eea;
+                width: 50px;
+                height: 50px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                background: #f0f0ff;
+                border-radius: 50%;
+            }
+            
+            .cluster-title {
+                flex: 1;
+            }
+            
+            .cluster-title h2 {
+                font-size: 1.3em;
+                margin-bottom: 5px;
+            }
+            
+            .cluster-status {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 0.9em;
+                font-weight: 600;
+            }
+            
+            .status-indicator {
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                animation: pulse 2s infinite;
+            }
+            
+            .status-indicator.online {
+                background: #4caf50;
+            }
+            
+            .status-indicator.offline {
+                background: #ff6b6b;
+                animation: none;
+            }
+            
+            .status-indicator.partial {
+                background: #ffa726;
+            }
+            
+            @keyframes pulse {
+                0%, 100% {
+                    opacity: 1;
+                }
+                50% {
+                    opacity: 0.5;
+                }
+            }
+            
+            .cluster-stats {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 15px;
+                margin-bottom: 20px;
+                padding-bottom: 20px;
+                border-bottom: 1px solid #e0e0e0;
+            }
+            
+            .stat {
+                text-align: center;
+            }
+            
+            .stat-value {
+                font-size: 1.8em;
+                font-weight: 700;
+                color: #667eea;
+                display: block;
+            }
+            
+            .stat-label {
+                font-size: 0.85em;
+                color: #999;
+                margin-top: 5px;
+            }
+            
+            .shards-list {
+                background: #f9f9f9;
+                padding: 15px;
+                border-radius: 8px;
+            }
+            
+            .shards-label {
+                font-weight: 600;
+                margin-bottom: 10px;
+                color: #333;
+            }
+            
+            .shard-item {
+                display: inline-block;
+                background: white;
+                padding: 6px 12px;
+                margin: 4px;
+                border-radius: 6px;
+                border: 1px solid #e0e0e0;
+                font-size: 0.85em;
+                color: #555;
+            }
+            
+            .footer {
+                text-align: center;
+                color: white;
+                margin-top: 40px;
+                opacity: 0.8;
+            }
+            
+            .error {
+                background: #ffebee;
+                color: #c62828;
+                padding: 15px;
+                border-radius: 8px;
+                margin-top: 10px;
+                border-left: 4px solid #c62828;
+            }
+            
+            .success {
+                background: #e8f5e9;
+                color: #2e7d32;
+                padding: 15px;
+                border-radius: 8px;
+                margin-top: 10px;
+                border-left: 4px solid #4caf50;
+            }
+            
+            @media (max-width: 768px) {
+                h1 {
+                    font-size: 1.8em;
+                }
+                
+                .search-box {
+                    flex-direction: column;
+                }
+                
+                .cluster-grid {
+                    grid-template-columns: 1fr;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <header>
+                <h1>⚡ Spectra Bot Status</h1>
+                <p class="subtitle">Check bot clusters, shards, and server status</p>
+                <p class="refresh-info">This page refreshes every 15 seconds</p>
+            </header>
+            
+            <div class="search-section">
+                <h2 style="margin-bottom: 20px;">Search Your Server</h2>
+                <p style="color: #666; margin-bottom: 15px;">Enter your Discord server ID to see which cluster it's running on</p>
+                
+                <div class="search-box">
+                    <input type="text" id="guildIdInput" placeholder="Enter your Discord server ID..." />
+                    <button onclick="searchGuild()">Search</button>
+                </div>
+                
+                <div id="searchResults" class="search-results"></div>
+            </div>
+            
+            <div style="margin-bottom: 30px;">
+                <h2 style="color: white; margin-bottom: 20px;">📊 Overview</h2>
+                <div id="clustersContainer" class="cluster-grid">
+                    <div style="text-align: center; padding: 40px; color: white;">
+                        <p>Loading cluster information...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <footer class="footer">
+                <p>&copy; 2026 Spectra Bot | Status Page</p>
+            </footer>
+        </div>
+        
+        <script>
+            let statusData = {};
+            
+            async function loadStatus() {
+                try {
+                    const response = await fetch('/api/status');
+                    statusData = await response.json();
+                    renderClusters();
+                } catch (error) {
+                    console.error('Error loading status:', error);
+                    document.getElementById('clustersContainer').innerHTML = 
+                        '<div class="error">Failed to load status information</div>';
+                }
+            }
+            
+            function renderClusters() {
+                const container = document.getElementById('clustersContainer');
+                container.innerHTML = '';
+                
+                if (!statusData.clusters || statusData.clusters.length === 0) {
+                    container.innerHTML = '<div class="error">No cluster information available</div>';
+                    return;
+                }
+                
+                statusData.clusters.forEach(cluster => {
+                    const card = document.createElement('div');
+                    card.className = 'cluster-card';
+                    
+                    const status = cluster.status || 'online';
+                    const statusClass = status === 'online' ? 'online' : (status === 'offline' ? 'offline' : 'partial');
+                    
+                    card.innerHTML = `
+                        <div class="cluster-header">
+                            <div class="cluster-number">${cluster.id}</div>
+                            <div class="cluster-title">
+                                <h2>${cluster.name}</h2>
+                                <div class="cluster-status">
+                                    <div class="status-indicator ${statusClass}"></div>
+                                    <span>${status.toUpperCase()}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="cluster-stats">
+                            <div class="stat">
+                                <span class="stat-value">${cluster.shard_count}</span>
+                                <div class="stat-label">Shards</div>
+                            </div>
+                            <div class="stat">
+                                <span class="stat-value">${cluster.guild_count || 0}</span>
+                                <div class="stat-label">Servers</div>
+                            </div>
+                        </div>
+                        
+                        <div class="shards-list">
+                            <div class="shards-label">Shards (${cluster.shard_ids.length})</div>
+                            <div>${cluster.shard_ids.map(id => `<span class="shard-item">Shard ${id}</span>`).join('')}</div>
+                        </div>
+                    `;
+                    
+                    container.appendChild(card);
+                });
+            }
+            
+            async function searchGuild() {
+                const guildId = document.getElementById('guildIdInput').value.trim();
+                const resultsDiv = document.getElementById('searchResults');
+                
+                if (!guildId) {
+                    resultsDiv.innerHTML = '<div class="error">Please enter a server ID</div>';
+                    return;
+                }
+                
+                resultsDiv.innerHTML = '<p style="color: #666;">Searching...</p>';
+                
+                try {
+                    const response = await fetch(`/api/status/guild/${guildId}`);
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        resultsDiv.innerHTML = `
+                            <div class="guild-result found">
+                                <div class="guild-name">✓ ${data.guild_name}</div>
+                                <div class="guild-cluster">
+                                    Running on <strong>Cluster ${data.cluster_id}</strong> (Shard ${data.shard_id})
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        resultsDiv.innerHTML = `
+                            <div class="guild-result not-found">
+                                <div class="guild-name">✗ Server not found</div>
+                                <div class="guild-cluster">
+                                    Make sure you entered the correct server ID and the bot is in your server.
+                                </div>
+                            </div>
+                        `;
+                    }
+                } catch (error) {
+                    resultsDiv.innerHTML = '<div class="error">Error searching for server</div>';
+                    console.error('Search error:', error);
+                }
+            }
+            
+            // Allow Enter key to search
+            document.getElementById('guildIdInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    searchGuild();
+                }
+            });
+            
+            // Load status on page load and refresh every 15 seconds
+            loadStatus();
+            setInterval(loadStatus, 15000);
+        </script>
+    </body>
+    </html>
+    """
+    return render_template_string(html)
+
 @app.route('/dashboard')
 @require_login
 def dashboard():
@@ -1876,6 +2338,115 @@ def save_leveling_settings(guild_id):
     config['leveling']['xp_per_level'] = int(data.get('xpPerLevel', 100))
     save_guild_config(guild_id, config)
     return jsonify({'success': True})
+
+# ==============================================================================
+# Helper Functions - Status & Cluster Management
+# ==============================================================================
+
+def get_cluster_info():
+    """Get current cluster/shard information.
+    
+    Returns:
+        dict: Cluster information including cluster ID, shards, guilds, and status
+    
+    For future: This can be extended to support multiple clusters by:
+    - Reading from config.json: cluster_config = config.get('cluster_config', {})
+    - Returning multiple cluster objects based on shard distribution
+    """
+    # Currently single cluster setup
+    cluster_info = {
+        'id': 0,
+        'name': 'Default Cluster',
+        'status': 'online',
+        'shard_ids': [0],
+        'shard_count': 1,
+        'guild_count': len(config)  # Number of configured guilds
+    }
+    return cluster_info
+
+def load_guild_cache():
+    """Load guild names from guild_cache.json file."""
+    guild_cache = {}
+    try:
+        if os.path.exists('guild_cache.json'):
+            with open('guild_cache.json', 'r') as f:
+                guild_cache = {int(k): v for k, v in json.load(f).items()}
+    except Exception as e:
+        print(f"Error loading guild cache: {e}")
+    return guild_cache
+
+def calculate_shard_for_guild(guild_id):
+    """Calculate which shard a guild belongs to.
+    
+    Args:
+        guild_id: Discord guild ID
+        
+    Returns:
+        dict: {'cluster_id': int, 'shard_id': int} or None if not found
+    """
+    guild_id_int = int(guild_id)
+    # Single shard formula: shard_id = (guild_id >> 22) % shard_count
+    # With 1 shard, all guilds are on shard 0
+    shard_id = (guild_id_int >> 22) % 1
+    cluster_id = 0
+    
+    return {'cluster_id': cluster_id, 'shard_id': shard_id}
+
+# ==============================================================================
+# API Routes - Status (Public - No Authentication)
+# ==============================================================================
+
+@app.route('/api/status')
+def api_status():
+    """Get all cluster and shard information (public endpoint)."""
+    try:
+        cluster = get_cluster_info()
+        return jsonify({
+            'success': True,
+            'clusters': [cluster],
+            'total_shards': sum(c['shard_count'] for c in [cluster]),
+            'total_guilds': cluster['guild_count'],
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@app.route('/api/status/guild/<guild_id>')
+def api_status_guild(guild_id):
+    """Search for a guild and return its cluster information (public endpoint)."""
+    try:
+        # Check if guild is in our config
+        if guild_id not in config:
+            return jsonify({
+                'success': False,
+                'error': 'Guild not found',
+                'message': 'The bot is not in this server or it has not been configured.'
+            }), 404
+        
+        # Get shard/cluster assignment
+        shard_info = calculate_shard_for_guild(guild_id)
+        
+        # Load guild name from guild cache
+        guild_cache = load_guild_cache()
+        guild_id_int = int(guild_id)
+        guild_name = guild_cache.get(guild_id_int, f"Guild {guild_id}")
+        
+        return jsonify({
+            'success': True,
+            'guild_id': guild_id,
+            'guild_name': guild_name,
+            'cluster_id': shard_info['cluster_id'],
+            'shard_id': shard_info['shard_id'],
+            'status': 'online'
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 # ==============================================================================
 # API Routes - Owner Panel

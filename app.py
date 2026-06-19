@@ -29,6 +29,7 @@ LEVELS_FILE = 'levels.json'
 GIVEAWAYS_FILE = 'giveaways.json'
 CONFIG_FILE = 'config.json'
 USER_CACHE_FILE = 'user_cache.json'
+GUILD_CACHE_FILE = 'guild_cache.json'
 LICENSE_FILE = 'licenses.json'
 # ---------------------------
 
@@ -38,6 +39,7 @@ ACTIVE_GIVEWAYS = {}
 GIVEAWAY_MESSAGES = {}
 CONFIG_DB = {}
 USER_CACHE = {}
+GUILD_CACHE = {}  # Cache for guild names: {guild_id: guild_name}
 LICENSE_DB = {}
 BOT_OWNER_ID = 1436238952389410837
 USER_CACHE_LOCK = threading.Lock()
@@ -188,8 +190,8 @@ def delete_license_from_firestore(license_key: str):
 # ==============================================================================
 
 def load_data():
-    """Loads all data (LEVELS_DB, ACTIVE_GIVEWAYS, CONFIG_DB, USER_CACHE) from JSON files."""
-    global LEVELS_DB, ACTIVE_GIVEWAYS, CONFIG_DB, USER_CACHE
+    """Loads all data (LEVELS_DB, ACTIVE_GIVEWAYS, CONFIG_DB, USER_CACHE, GUILD_CACHE) from JSON files."""
+    global LEVELS_DB, ACTIVE_GIVEWAYS, CONFIG_DB, USER_CACHE, GUILD_CACHE
 
     if os.path.exists(LEVELS_FILE):
         try:
@@ -227,6 +229,15 @@ def load_data():
             print(f"Error loading {USER_CACHE_FILE}: {e}")
             USER_CACHE = {}
 
+    if os.path.exists(GUILD_CACHE_FILE):
+        try:
+            with open(GUILD_CACHE_FILE, 'r') as f:
+                GUILD_CACHE = {int(k): v for k, v in json.load(f).items()}
+            print(f"Loaded {len(GUILD_CACHE)} guild names from cache.")
+        except Exception as e:
+            print(f"Error loading {GUILD_CACHE_FILE}: {e}")
+            GUILD_CACHE = {}
+
 
 def save_data(data_type):
     """Saves the specified data to its corresponding file."""
@@ -242,6 +253,9 @@ def save_data(data_type):
     elif data_type == 'giveaways':
         file_path = GIVEAWAYS_FILE
         data_to_save = ACTIVE_GIVEWAYS
+    elif data_type == 'guild_cache':
+        file_path = GUILD_CACHE_FILE
+        data_to_save = GUILD_CACHE
     else:
         print(f"ERROR: Unknown data type '{data_type}' for saving.")
         return
@@ -406,12 +420,29 @@ bot.setup_hook = setup_hook
 @bot.event
 async def on_ready():
     """Loads licenses and guild configs from Firestore after connection."""
+    global GUILD_CACHE
     print(f'Logged in as {bot.user} (ID: {bot.user.id})')
     await load_licenses_from_firestore()
     # FIX #1: Load guild configs (premium status) from Firestore so premium
     # survives bot restarts on Hugging Face Spaces.
     await load_guild_configs_from_firestore()
+    
+    # Populate guild cache from bot's current guilds
+    for guild in bot.guilds:
+        GUILD_CACHE[guild.id] = guild.name
+    save_data('guild_cache')
+    print(f'Cached {len(GUILD_CACHE)} guild names.')
+    
     print('Bot is ready to accept commands.')
+
+
+@bot.event
+async def on_guild_join(guild: discord.Guild):
+    """Cache guild name when the bot joins a new guild."""
+    global GUILD_CACHE
+    GUILD_CACHE[guild.id] = guild.name
+    save_data('guild_cache')
+    print(f"Joined new guild: {guild.name} (ID: {guild.id})")
 
 
 @bot.tree.error
