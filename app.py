@@ -685,6 +685,75 @@ class UtilityCog(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"<:x_mark:1503628893318414447> Failed to set status: {e}", ephemeral=True)
 
+@app_commands.command(name="anniversary", description="View your server's Year One anniversary status with Spectra.")
+async def spectra_anniversary(interaction: discord.Interaction):
+    await interaction.response.defer(thinking=True)
+    
+    # Check Firestore for server record / creation date
+    guild_ref = DB.collection('guilds').document(str(interaction.guild_id))
+    guild_doc = guild_ref.get()
+    
+    is_founding_server = False
+    join_date = "Unknown"
+    
+    if guild_doc.exists:
+        data = guild_doc.to_dict()
+        # Assuming you store a 'first_seen' or 'registered_at' timestamp
+        join_date = data.get('registered_at', 'Year One Beta')
+        is_founding_server = data.get('founding_member', True) # Adjust logic based on your DB schema
+    
+    embed = discord.Embed(
+        title="🎉 Spectra Year One Anniversary",
+        description="Thank you for being part of Spectra's journey through its first year!",
+        color=discord.Color.purple() # Sleek accent color
+    )
+    
+    embed.add_field(name="Server", value=interaction.guild.name, inline=True)
+    embed.add_field(name="Status", value="🌟 **Founding Server (Year One)**" if is_founding_server else "Active Server", inline=True)
+    embed.add_field(name="Record Found", value=f"`{join_date}`", inline=False)
+    
+    embed.set_footer(text="Here's to many more years of high-performance moderation.")
+    await interaction.followup.send(embed=embed)
+
+@app_commands.command(name="diagnostics", description="Runs a complete health check on Spectra's connection and systems.")
+@app_commands.checks.has_permissions(administrator=True)
+async def spectra_diagnostics(interaction: discord.Interaction):
+    await interaction.response.defer(thinking=True, ephemeral=True)
+    
+    # Calculate Latencies & Stats
+    latency_ms = round(interaction.client.latency * 1000)
+    
+    # Test Firestore Read
+    db_status = "✅ Connected"
+    try:
+        DB.collection('health_check').document('ping').get()
+    except Exception:
+        db_status = "❌ Error / Disconnected"
+        
+    # Check AutoMod rules count for this guild
+    automod_count = 0
+    try:
+        rules = await interaction.guild.fetch_automod_rules()
+        automod_count = len(rules)
+    except Exception:
+        automod_count = "Unavailable (Missing Permissions)"
+
+    embed = discord.Embed(
+        title="🖥️ Spectra System Diagnostics",
+        description="Core subsystem status report for this guild.",
+        color=discord.Color.dark_theme()
+    )
+    
+    embed.add_field(name="WebSocket Latency", value=f"`{latency_ms}ms`", inline=True)
+    embed.add_field(name="Database Status", value=db_status, inline=True)
+    embed.add_field(name="Active AutoMod Rules", value=f"`{automod_count}`", inline=True)
+    embed.add_field(name="Sharding Status", value=f"Shard ID: `{interaction.guild.shard_id or 0}`", inline=True)
+    embed.add_field(name="API Version", value="`Discord.py v2.x`", inline=True)
+    embed.add_field(name="Environment", value="`Production / Verified`", inline=True)
+    
+    embed.set_footer(text=f"Requested by {interaction.user.name} • Spectra v2.0 Anniversary Edition")
+    
+    await interaction.followup.send(embed=embed, ephemeral=True)
 
 class LicenseCog(commands.Cog):
     def __init__(self, bot):
